@@ -1,5 +1,5 @@
 ---
-name: shieldbot-scan
+name: shieldbot
 description: Run a full security scan on a repository. Invokes the shieldbot agent to detect vulnerabilities, hardcoded secrets, and CVEs using Semgrep (5,000+ rules), bandit, detect-secrets, pip-audit, and npm-audit.
 argument-hint: <repo_path> [--skip <scanner>] [--min-severity critical|high|medium|low|info] [--git-history]
 allowed-tools: [Bash, Read, Grep, Glob]
