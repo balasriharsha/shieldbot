@@ -1,0 +1,46 @@
+# Example: Add Shieldbot to your repository
+#
+# Copy this file to .github/workflows/shieldbot.yml in your repo.
+# Requires GitHub Advanced Security (free for public repos) for Code Scanning.
+
+name: Shieldbot Security Scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 8 * * 1'   # Weekly scan every Monday at 08:00 UTC
+  workflow_dispatch:        # Allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+  security-events: write   # Required for uploading SARIF to Code Scanning
+
+jobs:
+  shieldbot:
+    name: Shieldbot Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Needed for --scan-git-history
+
+      # Minimal — uses defaults (fail on high+, uploads findings to Code Scanning)
+      - name: Run Shieldbot
+        uses: BalaSriharsha/shieldbot@main
+
+      # Full configuration example (uncomment to customize):
+      # - name: Run Shieldbot
+      #   uses: BalaSriharsha/shieldbot@main
+      #   with:
+      #     path: '.'                    # Subdirectory to scan (default: repo root)
+      #     min-severity: high           # Report findings at or above this level
+      #     fail-on: high                # Fail the build on high+ findings
+      #     skip-scanners: 'ruff'        # Comma-separated list of scanners to skip
+      #     scan-git-history: 'false'    # Set to 'true' to scan git history for secrets
+      #     upload-sarif: 'true'         # Upload findings to GitHub Code Scanning
+      #     sarif-file: 'results.sarif'  # Custom SARIF output path

@@ -1,0 +1,33 @@
+name: Shieldbot Security Scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Run every Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write  # Required for uploading SARIF to Code Scanning
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for git-history scanning
+
+      - name: Run Shieldbot
+        uses: BalaSriharsha/shieldbot@main
+        with:
+          min-severity: high
+          fail-on: high
+          upload-sarif: 'true'

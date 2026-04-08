@@ -18,10 +18,10 @@ Call `mcp__shieldbot__check_scanner_tools` to verify which scanners are installe
 
 ### Step 2 — Run the scan
 
-Call `mcp__shieldbot__scan_repository` with the repository path. Use these defaults unless the user specifies otherwise:
+Call `mcp__shieldbot__scan_repository` with the repository path. Always use these defaults unless the user explicitly overrides:
 - `skip_scanners`: [] (run all available)
 - `scan_git_history`: false
-- `min_severity`: "info"
+- `min_severity`: "info" — **always scan all severities, never filter below info**
 
 The tool returns a JSON report. If the MCP server is unavailable, fall back to running scanners directly via Bash:
 ```bash
@@ -53,7 +53,7 @@ Use this structure:
 
 **Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN
 **Scanners run:** semgrep, bandit, detect-secrets, pip-audit, ...
-**Findings:** X critical · Y high · Z medium · N low
+**Findings:** X critical · Y high · Z medium · N low · N info
 **Scan duration:** Xs
 
 ---
@@ -86,6 +86,11 @@ Table: | File | Rule | Issue | Recommended Fix |
 
 ---
 
+### Low & Info Findings
+Table: | File | Rule | Severity | Issue | Recommended Fix |
+
+---
+
 ### Dependency CVEs
 Table: | Package | Version | CVE | Severity | Fix Version |
 
@@ -106,9 +111,77 @@ List findings you believe are false positives and why.
 
 ---
 
+### Step 5 — Offer to fix
+
+After presenting the full report, ask the user:
+
+> "Would you like me to fix all X vulnerabilities? I'll work through them severity-first, verify the application is working after every few fixes, and flag anything that can't be fixed safely."
+
+If the user says **yes**, proceed to the Fix Workflow below.
+
+---
+
+## Fix Workflow
+
+### Ordering
+Fix findings in this order: critical → high → medium → low → info. Skip confirmed false positives.
+
+### Batching & health checks
+- Fix vulnerabilities in batches of **3–5** at a time (group related or nearby fixes together when sensible).
+- After each batch, run a **health check** on the target repo:
+  1. Check for syntax/import errors: `python -c "import <main_module>"` or equivalent.
+  2. Run the existing test suite if one exists (`pytest`, `npm test`, `go test ./...`, etc.). If no test suite, run a quick smoke check (start the app briefly, hit a health endpoint, or do a dry-run import).
+  3. If the health check **passes**, announce the batch is done and continue.
+  4. If the health check **fails**:
+     - Diagnose what broke (read the error, trace it to the change that caused it).
+     - Fix the regression first before continuing with remaining vulnerabilities.
+     - Re-run the health check to confirm the fix worked.
+     - Then continue with the next batch.
+
+### Handling app-breaking vulnerabilities
+If a specific vulnerability's fix causes failures that cannot be resolved without breaking the application's intended behavior, or requires architectural changes beyond a targeted fix:
+1. **Revert** that specific change.
+2. Re-run the health check to confirm the app is back to a working state.
+3. Add the vulnerability to a **Skipped Findings** list with:
+   - The vulnerability title, file, and line
+   - Why the fix broke the app
+   - What would be required to fix it safely
+4. Continue with the remaining vulnerabilities.
+
+### Final summary
+After all fixes are done (or attempted), present:
+
+---
+
+## Fix Summary
+
+**Fixed:** X vulnerabilities  
+**Skipped:** Y vulnerabilities
+
+### Skipped Findings
+
+For each skipped finding:
+
+**[SEVERITY] Title**
+- **File:** `path/to/file.py:line`
+- **Why it was skipped:** What went wrong when trying to fix it
+- **What's needed to fix it safely:** Specific architectural change, refactor, or prerequisite
+- **Effort:** Low / Medium / High
+
+---
+
+Then ask the user:
+
+> "Would you like me to attempt the skipped findings anyway? I'll make my best effort but these carry a higher risk of breaking something — I'd recommend having a backup or working on a separate branch."
+
+---
+
 ## Rules
 
 - Never skip secrets scanning.
-- For large repos (>1000 findings): give detailed analysis for critical/high only; summarize medium/low in tables.
+- Always scan all severities (info through critical) — never filter out low or info findings from the report.
+- For large repos (>1000 findings): give detailed write-ups for critical/high; use tables for medium/low/info.
 - Do not invent findings — only report what scanners found or what you directly observe in code you read.
 - If a scan fails, report the error clearly and offer to run individual scanners manually via Bash.
+- Never fix a finding without verifying the app still works afterward (health check).
+- If a fix would require changes to more than 3 files or touches a core abstraction, flag it as a skipped finding rather than attempting it silently.

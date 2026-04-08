@@ -1,0 +1,140 @@
+name: Shieldbot Security Scan
+description: >
+  AI-powered security scanner. Combines Semgrep (5,000+ rules), bandit,
+  detect-secrets, pip-audit, and npm-audit to detect vulnerabilities,
+  hardcoded secrets, and CVEs. Uploads findings to GitHub Code Scanning via SARIF.
+
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  path:
+    description: Path to the repository to scan (relative to workspace root)
+    required: false
+    default: '.'
+  min-severity:
+    description: Minimum severity to report (critical, high, medium, low, info)
+    required: false
+    default: high
+  skip-scanners:
+    description: Comma-separated list of scanners to skip (semgrep, bandit, ruff, detect-secrets, pip-audit, npm-audit)
+    required: false
+    default: ''
+  scan-git-history:
+    description: Also scan git commit history for leaked secrets (requires gitleaks)
+    required: false
+    default: 'false'
+  upload-sarif:
+    description: Upload SARIF results to GitHub Code Scanning
+    required: false
+    default: 'true'
+  fail-on:
+    description: Exit with failure if findings at or above this severity are found (critical, high, medium, none)
+    required: false
+    default: high
+  sarif-file:
+    description: Path to write the SARIF output file
+    required: false
+    default: shieldbot-results.sarif
+
+outputs:
+  sarif-file:
+    description: Path to the generated SARIF file
+    value: ${{ steps.scan.outputs.sarif-file }}
+  total-findings:
+    description: Total number of findings detected
+    value: ${{ steps.scan.outputs.total-findings }}
+  risk-score:
+    description: Risk score (0-100) based on findings
+    value: ${{ steps.scan.outputs.risk-score }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Shieldbot
+      shell: bash
+      run: pip install shieldbot-mcp
+
+    - name: Build scanner skip flags
+      id: skip-flags
+      shell: bash
+      run: |
+        SKIP_FLAGS=""
+        if [ -n "${{ inputs.skip-scanners }}" ]; then
+          IFS=',' read -ra SCANNERS <<< "${{ inputs.skip-scanners }}"
+          for scanner in "${SCANNERS[@]}"; do
+            scanner=$(echo "$scanner" | xargs)
+            SKIP_FLAGS="$SKIP_FLAGS --skip $scanner"
+          done
+        fi
+        echo "flags=$SKIP_FLAGS" >> "$GITHUB_OUTPUT"
+
+    - name: Run security scan
+      id: scan
+      shell: bash
+      run: |
+        REPO_PATH="${{ github.workspace }}/${{ inputs.path }}"
+        SARIF_FILE="${{ inputs.sarif-file }}"
+        JSON_FILE="shieldbot-report.json"
+
+        GIT_HISTORY_FLAG=""
+        if [ "${{ inputs.scan-git-history }}" = "true" ]; then
+          GIT_HISTORY_FLAG="--scan-git-history"
+        fi
+
+        python -m shieldbot.run_scan \
+          "$REPO_PATH" \
+          --output-file "$JSON_FILE" \
+          --output-sarif "$SARIF_FILE" \
+          --min-severity "${{ inputs.min-severity }}" \
+          ${{ steps.skip-flags.outputs.flags }} \
+          $GIT_HISTORY_FLAG || SCAN_EXIT=$?
+
+        # Extract summary stats from JSON report
+        if [ -f "$JSON_FILE" ]; then
+          TOTAL=$(python -c "import json; r=json.load(open('$JSON_FILE')); print(r.get('total_findings', 0))" 2>/dev/null || echo "0")
+          CRITICAL=$(python -c "import json; r=json.load(open('$JSON_FILE')); print(r.get('findings_by_severity', {}).get('critical', 0))" 2>/dev/null || echo "0")
+          HIGH=$(python -c "import json; r=json.load(open('$JSON_FILE')); print(r.get('findings_by_severity', {}).get('high', 0))" 2>/dev/null || echo "0")
+          MEDIUM=$(python -c "import json; r=json.load(open('$JSON_FILE')); print(r.get('findings_by_severity', {}).get('medium', 0))" 2>/dev/null || echo "0")
+          LOW=$(python -c "import json; r=json.load(open('$JSON_FILE')); print(r.get('findings_by_severity', {}).get('low', 0))" 2>/dev/null || echo "0")
+        else
+          TOTAL=0; CRITICAL=0; HIGH=0; MEDIUM=0; LOW=0
+        fi
+
+        echo "sarif-file=$SARIF_FILE" >> "$GITHUB_OUTPUT"
+        echo "total-findings=$TOTAL" >> "$GITHUB_OUTPUT"
+        echo "risk-score=0" >> "$GITHUB_OUTPUT"
+
+        echo "### Shieldbot Security Scan" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Severity | Count |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Critical | $CRITICAL |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| High     | $HIGH |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Medium   | $MEDIUM |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Low      | $LOW |" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "**Total findings:** $TOTAL" >> "$GITHUB_STEP_SUMMARY"
+
+        # Respect fail-on threshold
+        FAIL_ON="${{ inputs.fail-on }}"
+        if [ "$FAIL_ON" = "critical" ] && [ "$CRITICAL" -gt 0 ]; then
+          echo "::error::Shieldbot: $CRITICAL critical finding(s) detected." && exit 3
+        elif [ "$FAIL_ON" = "high" ] && [ "$((CRITICAL + HIGH))" -gt 0 ]; then
+          echo "::error::Shieldbot: $((CRITICAL + HIGH)) critical/high finding(s) detected." && exit 2
+        elif [ "$FAIL_ON" = "medium" ] && [ "$((CRITICAL + HIGH + MEDIUM))" -gt 0 ]; then
+          echo "::error::Shieldbot: $((CRITICAL + HIGH + MEDIUM)) medium+ finding(s) detected." && exit 1
+        fi
+
+    - name: Upload SARIF to GitHub Code Scanning
+      if: inputs.upload-sarif == 'true' && hashFiles(inputs.sarif-file) != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-file }}
+        category: shieldbot
