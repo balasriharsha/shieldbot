@@ -98,6 +98,53 @@ pip install shieldbot-mcp
 
 ---
 
+## GitHub Actions Integration
+
+Add Shieldbot to any repository in 3 lines. Findings appear in the **Security > Code Scanning** tab via SARIF upload.
+
+```yaml
+# .github/workflows/shieldbot.yml
+name: Shieldbot Security Scan
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly scan
+
+permissions:
+  contents: read
+  security-events: write  # Required for Code Scanning upload
+
+jobs:
+  shieldbot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: BalaSriharsha/shieldbot@main
+```
+
+**All available inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `path` | `.` | Directory to scan |
+| `min-severity` | `high` | Minimum severity to report |
+| `fail-on` | `high` | Fail build if findings at or above this level |
+| `skip-scanners` | `` | Comma-separated scanners to skip |
+| `scan-git-history` | `false` | Scan git history for leaked secrets |
+| `upload-sarif` | `true` | Upload to GitHub Code Scanning |
+| `sarif-file` | `shieldbot-results.sarif` | SARIF output path |
+
+**Outputs:** `total-findings`, `risk-score`, `sarif-file`
+
+See [`.github/workflows/shieldbot-example.yml`](.github/workflows/shieldbot-example.yml) for the full annotated example.
+
+---
+
 ## Exit Codes (CI/CD Integration)
 
 | Code | Meaning |

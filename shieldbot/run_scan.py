@@ -47,6 +47,7 @@ from shieldbot.scanners import (
 )
 from shieldbot.scanners.base import deduplicate, run_all_parallel
 from shieldbot.reporters.json_reporter import write_json_report
+from shieldbot.reporters.sarif_reporter import write_sarif_report
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,10 @@ def main():
         help="Write JSON report to this file (default: print to stdout)",
     )
     parser.add_argument(
+        "--output-sarif", default=None, metavar="FILE",
+        help="Also write a SARIF 2.1.0 report to this file (for GitHub Code Scanning)",
+    )
+    parser.add_argument(
         "--skip", action="append", default=[],
         choices=["semgrep", "bandit", "ruff", "detect-secrets", "pip-audit", "npm-audit"],
         help="Skip a scanner (repeatable)",
@@ -236,14 +241,19 @@ def main():
         print(json_text)
     else:
         print(f"[shieldbot] Report written to {args.output_file}", file=sys.stderr)
-        print(
-            f"[shieldbot] {report.total_findings} findings: "
-            f"critical={report.findings_by_severity.get('critical', 0)} "
-            f"high={report.findings_by_severity.get('high', 0)} "
-            f"medium={report.findings_by_severity.get('medium', 0)} "
-            f"low={report.findings_by_severity.get('low', 0)}",
-            file=sys.stderr,
-        )
+
+    if args.output_sarif:
+        write_sarif_report(report, args.output_sarif)
+        print(f"[shieldbot] SARIF report written to {args.output_sarif}", file=sys.stderr)
+
+    print(
+        f"[shieldbot] {report.total_findings} findings: "
+        f"critical={report.findings_by_severity.get('critical', 0)} "
+        f"high={report.findings_by_severity.get('high', 0)} "
+        f"medium={report.findings_by_severity.get('medium', 0)} "
+        f"low={report.findings_by_severity.get('low', 0)}",
+        file=sys.stderr,
+    )
 
     # Exit code based on severity
     crit = report.findings_by_severity.get("critical", 0)
