@@ -1,8 +1,6 @@
 name: Shieldbot Security Scan
 description: >
-  AI-powered security scanner. Combines Semgrep (5,000+ rules), bandit,
-  detect-secrets, pip-audit, and npm-audit to detect vulnerabilities,
-  hardcoded secrets, and CVEs. Uploads findings to GitHub Code Scanning via SARIF.
+  AI-powered security scanner using Semgrep (5k+ rules), bandit, detect-secrets, pip-audit & npm-audit. Detects vulnerabilities, secrets & CVEs. Uploads SARIF to GitHub Code Scanning.
 
 branding:
   icon: shield
