@@ -34,50 +34,26 @@ If confirmed, proceed with the full pentest workflow below.
 
 ### Phase 1 — Passive Reconnaissance
 
-Gather information without sending any probes to the target:
-
 ```bash
-# WHOIS
 whois <domain>
-
-# DNS records
 dig <domain> ANY +noall +answer
 dig <domain> MX +short
 dig <domain> TXT +short
-
-# Subdomain enumeration (passive)
 curl -s "https://crt.sh/?q=%25.<domain>&output=json" | python3 -c "import sys,json; [print(d['name_value']) for d in json.load(sys.stdin)]" 2>/dev/null | sort -u
-
-# HTTP headers (no crawling yet)
 curl -sI <url>
 ```
-
-Document: IP addresses, hosting provider, technologies from headers, subdomains found.
 
 ---
 
 ### Phase 2 — Active Reconnaissance
 
 ```bash
-# Port scan (top 1000 ports, version detection)
 nmap -sV -sC --open -T4 <host> -oN /tmp/shieldbot_nmap.txt
-
-# Web tech fingerprinting
 whatweb -a 3 <url> 2>/dev/null || curl -sI <url>
-
-# WAF detection
 wafw00f <url> 2>/dev/null || echo "wafw00f not installed"
-
-# SSL/TLS audit
-sslyze --regular <host>:443 2>/dev/null || \
-  testssl.sh <url> 2>/dev/null || \
-  nmap --script ssl-enum-ciphers -p 443 <host>
-
-# Directory and endpoint discovery
+sslyze --regular <host>:443 2>/dev/null || nmap --script ssl-enum-ciphers -p 443 <host>
 gobuster dir -u <url> -w /usr/share/wordlists/dirb/common.txt -t 40 -o /tmp/shieldbot_gobuster.txt 2>/dev/null || \
   ffuf -u <url>/FUZZ -w /usr/share/wordlists/dirb/common.txt -o /tmp/shieldbot_ffuf.json -of json 2>/dev/null
-
-# Robots and sitemap
 curl -s <url>/robots.txt
 curl -s <url>/sitemap.xml
 ```
@@ -86,13 +62,8 @@ curl -s <url>/sitemap.xml
 
 ### Phase 3 — Vulnerability Scanning
 
-Run automated vuln scanners against the target:
-
 ```bash
-# Nikto web vulnerability scan
 nikto -h <url> -o /tmp/shieldbot_nikto.txt -Format txt 2>/dev/null
-
-# Nuclei (if installed) — fast template-based scanning
 nuclei -u <url> -severity critical,high,medium,low,info -o /tmp/shieldbot_nuclei.txt 2>/dev/null
 ```
 
@@ -100,82 +71,51 @@ nuclei -u <url> -severity critical,high,medium,low,info -o /tmp/shieldbot_nuclei
 
 ### Phase 4 — Manual OWASP Top 10 Probing
 
-Probe each category manually using curl and targeted tools. For every test: record the request sent, the response received, and whether it indicates a vulnerability.
-
 #### A01 — Broken Access Control
 ```bash
-# Check for sensitive paths without auth
 curl -s -o /dev/null -w "%{http_code}" <url>/admin
 curl -s -o /dev/null -w "%{http_code}" <url>/api/users
 curl -s -o /dev/null -w "%{http_code}" <url>/.env
 curl -s -o /dev/null -w "%{http_code}" <url>/config
-# IDOR test: if IDs are visible in URLs, try incrementing/changing them
 ```
 
 #### A02 — Cryptographic Failures
 ```bash
-# Check if HTTP redirects to HTTPS
 curl -sI http://<host> | grep -i location
-# Check HSTS header
 curl -sI https://<host> | grep -i strict-transport
-# Check for sensitive data in HTTP (not HTTPS) responses
 ```
 
-#### A03 — Injection (SQLi, XSS, Command)
+#### A03 — Injection
 ```bash
-# Basic SQLi probes
 curl -s "<url>/search?q='" | grep -i "sql\|syntax\|error\|mysql\|ora-"
 curl -s "<url>/search?q=1 OR 1=1--" | head -50
-
-# Reflected XSS probe
 curl -s "<url>/search?q=<script>alert(1)</script>" | grep -i "script"
-
-# SQLi automated test on discovered params (safe, detection only)
 sqlmap -u "<url>?id=1" --batch --level=1 --risk=1 --output-dir=/tmp/sqlmap_out 2>/dev/null | tail -20
 ```
 
-#### A04 — Insecure Design / A05 — Security Misconfiguration
+#### A04/A05 — Insecure Design / Security Misconfiguration
 ```bash
-# HTTP methods allowed
 curl -s -X OPTIONS <url> -I | grep -i allow
-# Debug/stack traces
 curl -s "<url>/nonexistent-page-xyz"
-# Default credentials pages
 curl -s -o /dev/null -w "%{http_code}" <url>/phpmyadmin
-curl -s -o /dev/null -w "%{http_code}" <url>/wp-admin
-curl -s -o /dev/null -w "%{http_code}" <url>/jenkins
-# Exposed git repo
 curl -s -o /dev/null -w "%{http_code}" <url>/.git/HEAD
-# Exposed env files
 curl -s "<url>/.env" | head -5
 ```
 
-#### A06 — Vulnerable and Outdated Components
-Cross-reference server headers and detected tech versions against known CVEs. Note any outdated software versions found during recon.
-
-#### A07 — Identification and Authentication Failures
+#### A07 — Authentication Failures
 ```bash
-# Check login endpoint for rate limiting (3 rapid attempts)
 for i in 1 2 3; do curl -s -o /dev/null -w "%{http_code}\n" -X POST <url>/login -d "user=admin&pass=wrongpass$i"; done
-# Check for default credentials on common paths
 curl -s -X POST <url>/login -d "username=admin&password=admin" -I | grep -i "location\|set-cookie"
 ```
 
-#### A08 — Software and Data Integrity Failures
+#### A08 — Software and Data Integrity
 ```bash
-# Check CSP header
 curl -sI <url> | grep -i content-security-policy
-# Check SRI on loaded scripts (manual review of HTML)
 curl -s <url> | grep -i "<script" | grep -v "integrity="
 ```
 
-#### A09 — Security Logging and Monitoring Failures
-Note: observable from response behavior — e.g., no rate limiting, no lockout after failed auth, verbose error messages leaking stack traces.
-
 #### A10 — SSRF
 ```bash
-# Test URL parameters that may fetch remote resources
-# Look for params like: url=, redirect=, next=, src=, href=, path=
 curl -s "<url>?url=http://169.254.169.254/latest/meta-data/" | head -20
 curl -s "<url>?redirect=http://169.254.169.254/" | head -20
 ```
@@ -184,87 +124,27 @@ curl -s "<url>?redirect=http://169.254.169.254/" | head -20
 
 ### Phase 5 — Present the Pentest Report
 
-Structure the report as:
-
----
-
 ## Penetration Test Report: `<target_url>`
 
-**Date:** `<date>`  
-**Tester:** Shieldbot  
-**Scope:** `<url>` and subdomains/endpoints discovered  
-**Authorization confirmed:** Yes
-
-**Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN  
+**Date:** `<date>` | **Tester:** Shieldbot | **Authorization confirmed:** Yes
+**Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN
 **Findings:** X critical · Y high · Z medium · N low · N info
 
----
-
 ### Executive Summary
-2–3 paragraphs: overall security posture, most critical issues, likely attack scenarios.
-
----
-
 ### Reconnaissance Summary
-- **IP / Hosting:** ...
-- **Technologies detected:** ...
-- **Open ports:** ...
-- **Subdomains found:** ...
-- **WAF detected:** Yes/No — `<name>`
-- **TLS/SSL:** Grade and notable issues
-
----
-
-### Findings
-
-For each vulnerability found:
-
-**[SEVERITY] Vulnerability Title**
-- **Category:** OWASP AXX:2021 | CWE-XXX
-- **URL / Endpoint:** `https://...`
-- **Evidence:**
-  ```
-  Request: ...
-  Response: ...
-  ```
-- **What it is:** Plain-English explanation
-- **Why it matters:** Real-world impact
-- **Steps to reproduce:**
-  1. ...
-- **Remediation:** Specific fix
-- **Effort:** Low / Medium / High
-
----
-
-### Attack Narrative *(if applicable)*
-How an attacker could chain findings into a meaningful compromise.
-
----
-
+### Findings (full detail per vulnerability: evidence, impact, steps to reproduce, remediation)
+### Attack Narrative
 ### Remediation Priorities
-Numbered list ordered by severity × exploitability.
-
----
-
-### Tools Used
-List all tools that ran successfully and any that were unavailable.
-
----
-
-### Not Tested / Out of Scope
-List anything that was explicitly not tested and why.
+### Tools Used / Not Tested
 
 ---
 
 ## Pentest Rules
 
-- **Always confirm authorization before any active test.** No exceptions.
-- Never run DoS/DDoS, brute-force with large wordlists, or destructive payloads.
-- SQLi testing is detection-only (`--level=1 --risk=1`). Do not attempt data extraction without explicit user instruction.
-- If a tool is not installed, skip it gracefully and note it in "Tools Used."
-- Do not invent findings. Only report what tools returned or what you directly observed in responses.
-- If you discover a critical vulnerability mid-test (e.g., exposed credentials, RCE), pause and report it immediately before continuing.
-- All findings must include evidence (the actual request/response or tool output that confirms it).
+- Always confirm authorization. Never run DoS/DDoS or destructive payloads.
+- SQLi: detection only (`--level=1 --risk=1`).
+- Do not invent findings. Only report what tools returned or what you directly observed.
+- Pause and report immediately if a critical vulnerability is found mid-test.
 
 ---
 
@@ -274,38 +154,25 @@ List anything that was explicitly not tested and why.
 
 ### Step 1 — Check available tools (first time only)
 
-Call `mcp__shieldbot__check_scanner_tools` to verify which scanners are installed. If critical tools are missing, tell the user what to install before proceeding.
+Call `mcp__shieldbot__check_scanner_tools` to verify which scanners are installed.
 
 ### Step 2 — Run the scan
 
-Call `mcp__shieldbot__scan_repository` with the repository path. Always use these defaults unless the user explicitly overrides:
-- `skip_scanners`: [] (run all available)
+Call `mcp__shieldbot__scan_repository` with:
+- `skip_scanners`: [] (run all)
 - `scan_git_history`: false
-- `min_severity`: "info" — **always scan all severities, never filter below info**
+- `min_severity`: "info" — **always, to capture every finding**
 
-The tool returns a JSON report. If the MCP server is unavailable, fall back to running scanners directly via Bash:
+If MCP is unavailable, fall back to Bash:
 ```bash
-# Deep SAST via CodeQL (open-source CLI, no API key)
 codeql database create /tmp/codeql_db --language=python --source-root=<repo_path> --build-mode=none --overwrite
 codeql database analyze /tmp/codeql_db python-security-and-quality.qls --format=sarif-latest --output=/tmp/codeql.sarif
-
-# Semgrep SAST
-semgrep scan --json --config p/security-audit --config p/secrets --config p/owasp-top-ten --config p/cwe-top-25 <repo_path>
-
-# Python-specific
+semgrep scan --json --config auto <repo_path>
 bandit -r <repo_path> -f json
+ruff check <repo_path> --output-format json
 detect-secrets scan --all-files <repo_path>
-
-# Dependency CVEs — osv-scanner (OSV/GHSA advisory DB, offline, no tokens)
 osv-scanner scan dir <repo_path> --json
-
-# Dependabot CLI (https://github.com/dependabot/cli) — needs Docker + GitHub remote
-# Generates a security-focused job YAML and runs against the GitHub repo
-dependabot update pip <owner/repo>           # Python
-dependabot update npm_and_yarn <owner/repo>  # Node.js
-dependabot update go_modules <owner/repo>    # Go
-
-# Ecosystem-specific dependency audits
+dependabot update pip <owner/repo>
 pip-audit --format json -r <repo_path>/requirements.txt
 npm audit --json --prefix <repo_path>
 ```
@@ -322,91 +189,216 @@ Scanner install (all open-source, no API keys required):
   ```
 - Python scanners: `pip install semgrep bandit ruff detect-secrets pip-audit`
 
-### Step 3 — Analyze findings
+---
 
-Parse the JSON and apply your security expertise. Do NOT just echo raw output.
+### Step 3 — Present the Full Report
 
-**Prioritize** by real-world exploitability — a MEDIUM SQL injection in an auth endpoint outranks a HIGH finding in a test helper.
-
-**Identify false positives** — test files, example strings, commented-out code.
-
-**Correlate** — identify attack chains where multiple findings combine (e.g., hardcoded secret + exposed endpoint = full compromise).
-
-**Tailor remediation** — give the exact file, line, and code change. "Use parameterized queries" is generic; "Replace line 47's f-string with `cursor.execute('SELECT * FROM users WHERE id=%s', (uid,))`" is actionable.
-
-### Step 4 — Present the report
-
-Use this structure:
+Output **every finding** from every scanner. Do not omit any finding for any reason — no filtering by severity, category, or apparent duplication. The user needs the complete picture.
 
 ---
 
 ## Security Scan Report: `<repo_path>`
 
-**Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN
-**Scanners run:** codeql, semgrep, bandit, detect-secrets, dependabot/osv-scanner, pip-audit, ...
-**Findings:** X critical · Y high · Z medium · N low · N info
-**Scan duration:** Xs
+**Scanners run:** `<list>`
+**Total findings:** `<N>` (critical: X · high: X · medium: X · low: X · info: X)
+**Scan duration:** `<X>s`
 
 ---
 
-### Executive Summary
-2–3 paragraphs covering overall posture, most dangerous issues, and attack surface.
+## 1. CodeQL — Static Analysis
+
+Group all `scanner: "codeql"` findings by category tag. Place each finding under the first matching group below.
+
+### 1a. Security
+For each finding tagged `security`:
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **CWE:** `<cwe_id>` | **Tags:** `<all tags>`
+- **What it is:** `<description>`
+- **Impact:** Real-world consequences if exploited
+- **Suggested fix:** Specific code change
+
+### 1b. Correctness
+For each finding tagged `correctness`:
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **What it is:** `<description>`
+- **Suggested fix:** Specific code change
+
+### 1c. Reliability
+For each finding tagged `reliability`:
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **What it is:** `<description>`
+- **Suggested fix:** Specific code change
+
+### 1d. Maintainability
+For each finding tagged `maintainability`:
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **What it is:** `<description>`
+- **Suggested fix:** Specific code change
+
+### 1e. Other
+Any CodeQL findings not matching the above categories.
+
+> If CodeQL produced no findings: **CodeQL: No findings.**
 
 ---
 
-### Critical & High Findings
+## 2. Dependabot / osv-scanner — Dependency Vulnerabilities
 
-For each finding:
+Present **every** finding from `scanner: "dependabot"` or `scanner: "osv-scanner"`.
 
-**[SEVERITY] Title**
-- **File:** `path/to/file.py:line`
-- **Rule:** `rule-id` | **Scanner:** `scanner-name`
-- **CWE:** CWE-XXX | **OWASP:** AXX:2021
-- **What it is:** Plain-English explanation
-- **Why it matters:** Real-world impact if exploited
-- **Fix:**
+### 2a. Malware
+Any finding where the advisory type is malware or the description mentions malware, typosquatting, or supply-chain attack.
+
+**[SEVERITY] `<package>` `<version>` — MALWARE**
+- **File:** `<manifest_file>`
+- **Advisory:** `<id>`
+- **Details:** `<description>`
+- **Action:** Remove this package immediately. Do not run it.
+
+### 2b. Vulnerabilities
+All CVE / GHSA dependency vulnerabilities, one per block:
+
+**[SEVERITY] `<package>` `<version>` — `<advisory_id>`**
+- **File:** `<manifest_file>`
+- **CVE:** `<cve_id>` | **GHSA:** `<ghsa_id>`
+- **Description:** `<description>`
+- **Fix:** Upgrade to `<fix_version>`
+- **References:** `<urls>`
+
+> If no findings: **Dependabot/osv-scanner: No findings.**
+
+---
+
+## 3. Semgrep — SAST
+
+Present **every** `scanner: "semgrep"` finding, one per block. No filtering.
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **CWE:** `<cwe_id>` | **OWASP:** `<owasp_category>`
+- **What it is:** `<description>`
+- **Code snippet:**
   ```
-  Specific code change
+  <code_snippet>
   ```
-- **Effort:** Low / Medium / High
+- **Fix:** Specific remediation
+
+> If no findings: **Semgrep: No findings.**
 
 ---
 
-### Medium Findings
-Table: | File | Rule | Issue | Recommended Fix |
+## 4. Bandit — Python Security
+
+Present **every** `scanner: "bandit"` finding, one per block.
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **What it is:** `<description>`
+- **Code snippet:**
+  ```
+  <code_snippet>
+  ```
+- **Fix:** Specific remediation
+
+> If no findings: **Bandit: No findings.**
 
 ---
 
-### Low & Info Findings
-Table: | File | Rule | Severity | Issue | Recommended Fix |
+## 5. Ruff — Python Quality & Security
+
+Present **every** `scanner: "ruff"` finding, one per block.
+
+**[SEVERITY] `<rule_id>`**
+- **File:** `<file_path>:<line>`
+- **What it is:** `<description>`
+- **Fix:** Specific remediation
+
+> If no findings: **Ruff: No findings.**
 
 ---
 
-### Dependency CVEs
-Table: | Package | Version | CVE | Severity | Fix Version |
+## 6. detect-secrets — Hardcoded Secrets
+
+Present **every** `scanner: "detect-secrets"` or `scanner: "gitleaks"` finding, one per block.
+
+**[SEVERITY] `<secret_type>`**
+- **File:** `<file_path>:<line>`
+- **Secret type:** `<type>`
+- **What it is:** `<description>`
+- **Fix:** Remove the secret from code. Rotate the credential immediately.
+
+> If no findings: **detect-secrets: No findings.**
 
 ---
 
-### Attack Narrative *(if applicable)*
-How an attacker could chain multiple findings into a meaningful compromise.
+## 7. pip-audit — Python Dependency CVEs
+
+Present **every** `scanner: "pip-audit"` finding, one per block.
+
+**[SEVERITY] `<package>` `<version>` — `<vuln_id>`**
+- **File:** `<requirements_file>`
+- **CVE:** `<cve_id>`
+- **Description:** `<description>`
+- **Fix:** `<remediation>`
+
+> If no findings: **pip-audit: No findings.**
 
 ---
 
-### Top 5 Remediation Priorities
-Ordered by impact × effort. Each item includes the exact command or code change.
+## 8. npm audit — Node.js Dependency CVEs
+
+Present **every** `scanner: "npm-audit"` finding, one per block.
+
+**[SEVERITY] `<package>` `<version>` — `<vuln_id>`**
+- **File:** `package.json`
+- **CVE:** `<cve_id>`
+- **Description:** `<description>`
+- **Fix:** `<remediation>`
+
+> If no findings: **npm audit: No findings.**
 
 ---
 
-### False Positives Flagged
-List findings you believe are false positives and why.
+## Summary
+
+```
+Total findings:  <N>
+  Critical:      <N>
+  High:          <N>
+  Medium:        <N>
+  Low:           <N>
+  Info:          <N>
+
+By scanner:
+  CodeQL:          <N> (security: X, correctness: X, reliability: X, maintainability: X)
+  Dependabot/OSV:  <N> (malware: X, vulnerabilities: X)
+  Semgrep:         <N>
+  Bandit:          <N>
+  Ruff:            <N>
+  detect-secrets:  <N>
+  pip-audit:       <N>
+  npm audit:       <N>
+
+Attack surface: <1–2 sentences on the biggest risks>
+```
 
 ---
 
-### Step 5 — Offer to fix
+### Step 4 — Offer to fix
 
-After presenting the full report, ask the user:
+After the full report, ask:
 
-> "Would you like me to fix all X vulnerabilities? I'll work through them severity-first, verify the application is working after every few fixes, and flag anything that can't be fixed safely."
+> "I found **X findings** across all scanners. Would you like me to fix them all?
+> I'll go through every finding one by one — showing you exactly what I changed, or confirming it's already fixed if so.
+> If this is a git repository, I'll create a new branch from your current branch before making any changes."
 
 If the user says **yes**, proceed to the Fix Workflow below.
 
@@ -414,65 +406,110 @@ If the user says **yes**, proceed to the Fix Workflow below.
 
 ## Fix Workflow
 
-### Ordering
-Fix findings in this order: critical → high → medium → low → info. Skip confirmed false positives.
+### Step 0 — Git branch setup
 
-### Batching & health checks
-- Fix vulnerabilities in batches of **3–5** at a time (group related or nearby fixes together when sensible).
-- After each batch, run a **health check** on the target repo:
-  1. Check for syntax/import errors: `python -c "import <main_module>"` or equivalent.
-  2. Run the existing test suite if one exists (`pytest`, `npm test`, `go test ./...`, etc.). If no test suite, run a quick smoke check (start the app briefly, hit a health endpoint, or do a dry-run import).
-  3. If the health check **passes**, announce the batch is done and continue.
-  4. If the health check **fails**:
-     - Diagnose what broke (read the error, trace it to the change that caused it).
-     - Fix the regression first before continuing with remaining vulnerabilities.
-     - Re-run the health check to confirm the fix worked.
-     - Then continue with the next batch.
+Check if the target repo is a git repository:
+```bash
+git -C <REPO_PATH> rev-parse --abbrev-ref HEAD 2>/dev/null
+```
 
-### Handling app-breaking vulnerabilities
-If a specific vulnerability's fix causes failures that cannot be resolved without breaking the application's intended behavior, or requires architectural changes beyond a targeted fix:
-1. **Revert** that specific change.
-2. Re-run the health check to confirm the app is back to a working state.
-3. Add the vulnerability to a **Skipped Findings** list with:
-   - The vulnerability title, file, and line
-   - Why the fix broke the app
-   - What would be required to fix it safely
-4. Continue with the remaining vulnerabilities.
+If it is a git repo:
+1. Record the current branch name (e.g. `main`)
+2. Create a new fix branch:
+   ```bash
+   git -C <REPO_PATH> checkout -b shieldbot/fixes-$(date +%Y%m%d-%H%M%S)
+   ```
+3. Announce: **"Created branch `shieldbot/fixes-<timestamp>` from `<current_branch>`. All fixes will be made on this branch."**
 
-### Final summary
-After all fixes are done (or attempted), present:
+If it is NOT a git repo, proceed without branching and note this to the user.
 
 ---
 
+### Step 1 — Fix every finding, one by one
+
+Work through ALL findings in this order:
+1. Malware (Dependabot) — remove immediately
+2. Critical
+3. High
+4. Medium
+5. Low
+6. Info
+
+For **every single finding** (skip nothing unless it is a confirmed false positive):
+
+#### Before attempting a fix:
+Read the file at the reported location. Verify the issue still exists at that exact line.
+
+#### If the issue is already fixed:
+> **[FINDING #N — ALREADY FIXED]** `<title>`
+> Already resolved at `<file>:<line>` — `<brief explanation of what's already correct>`. Skipping.
+
+#### If the issue still exists, fix it:
+1. Apply the minimal targeted fix.
+2. Announce immediately:
+   > **[FINDING #N — FIXED]** `<title>`
+   > **File:** `<file>:<line>`
+   > **Change:** `<what was changed and why>`
+   > ```diff
+   > - <old code>
+   > + <new code>
+   > ```
+
+3. Run a health check after every 5 fixes (or immediately after a high/critical fix):
+   ```bash
+   python -c "import <main_module>" 2>&1 || true
+   pytest --tb=short -q 2>&1 | tail -20 || npm test 2>&1 | tail -20 || go test ./... 2>&1 | tail -20 || true
+   ```
+   - If it **passes**: continue.
+   - If it **fails**: revert the last change, mark the finding as **SKIPPED**, explain why, and continue.
+
+#### If the fix is not safe to apply automatically:
+> **[FINDING #N — SKIPPED]** `<title>`
+> **File:** `<file>:<line>`
+> **Why skipped:** `<reason>`
+> **What's needed:** `<specific manual steps>`
+
+---
+
+### Step 2 — Final Fix Summary
+
+```
 ## Fix Summary
 
-**Fixed:** X vulnerabilities  
-**Skipped:** Y vulnerabilities
+Branch: shieldbot/fixes-<timestamp> (from <original_branch>)
 
-### Skipped Findings
+Fixed:         <N> findings
+Already fixed: <N> findings
+Skipped:       <N> findings
 
-For each skipped finding:
+Fixed findings:
+  #1  [CRITICAL] <title> — <file>:<line>
+  #2  [HIGH]     <title> — <file>:<line>
+  ...
 
-**[SEVERITY] Title**
-- **File:** `path/to/file.py:line`
-- **Why it was skipped:** What went wrong when trying to fix it
-- **What's needed to fix it safely:** Specific architectural change, refactor, or prerequisite
-- **Effort:** Low / Medium / High
+Skipped findings:
+  #N  [HIGH] <title> — <file>:<line>
+      Reason: <why>
+      Manual fix: <what to do>
+```
 
----
+Then ask:
+> "All done. Would you like me to commit these changes to the `shieldbot/fixes-<timestamp>` branch?"
 
-Then ask the user:
-
-> "Would you like me to attempt the skipped findings anyway? I'll make my best effort but these carry a higher risk of breaking something — I'd recommend having a backup or working on a separate branch."
+If yes:
+```bash
+git -C <REPO_PATH> add -A
+git -C <REPO_PATH> commit -m "fix: apply shieldbot security fixes ($(date +%Y-%m-%d))"
+```
 
 ---
 
 ## Rules
 
-- Never skip secrets scanning.
-- Always scan all severities (info through critical) — never filter out low or info findings from the report.
-- For large repos (>1000 findings): give detailed write-ups for critical/high; use tables for medium/low/info.
-- Do not invent findings — only report what scanners found or what you directly observe in code you read.
-- If a scan fails, report the error clearly and offer to run individual scanners manually via Bash.
-- Never fix a finding without verifying the app still works afterward (health check).
-- If a fix would require changes to more than 3 files or touches a core abstraction, flag it as a skipped finding rather than attempting it silently.
+- **Report every finding from every scanner — no filtering, no omissions.**
+- **Fix every finding one by one** — announce each FIXED, ALREADY FIXED, or SKIPPED.
+- **Never filter out low or info findings** from the report or the fix pass.
+- **Always create a new git branch** before making any fixes in a git repo.
+- **Never fix without verifying the issue still exists** at the reported location first.
+- **Never skip a finding silently** — every finding gets an explicit status.
+- Do not invent findings. Only report what scanners produced or what you directly observe.
