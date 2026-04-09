@@ -38,7 +38,6 @@ jobs:
       #   uses: BalaSriharsha/shieldbot@main
       #   with:
       #     path: '.'                    # Subdirectory to scan (default: repo root)
-      #     min-severity: high           # Report findings at or above this level
       #     fail-on: high                # Fail the build on high+ findings
       #     skip-scanners: 'ruff'        # Comma-separated list of scanners to skip
       #     scan-git-history: 'false'    # Set to 'true' to scan git history for secrets

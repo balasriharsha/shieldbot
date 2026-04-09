@@ -55,7 +55,6 @@ All scanners run **in parallel**. Findings are deduplicated, ranked by exploitab
 ```
 /shieldbot .
 /shieldbot /path/to/repo
-/shieldbot . --min-severity critical
 /shieldbot . --git-history
 ```
 
@@ -131,8 +130,28 @@ All three tools are fully open-source and installed from their official GitHub r
 | `repo_path` | string | required | Absolute path to the repository |
 | `skip_scanners` | list | `[]` | Scanners to skip — valid values: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`, `trivy` |
 | `scan_git_history` | bool | `false` | Also scan git commit history for leaked secrets |
-| `min_severity` | string | `"info"` | Minimum severity to include (`critical`, `high`, `medium`, `low`, `info`) |
 | `extra_images` | list | `[]` | Pre-built Docker image names/tags to scan directly with Trivy — use when `docker build` fails in restricted environments (e.g. `["mcr.microsoft.com/playwright:v1.50-noble"]`) |
+
+### Dockerfile / docker-compose fix utilities
+
+Shieldbot includes a command-line fixer that the agent uses to analyse and patch Dockerfiles and compose files:
+
+```bash
+# Analyse a Dockerfile and generate a fix plan from scan results
+python -m shieldbot.fixers.dockerfile_fixer analyze Dockerfile shieldbot-report.json
+
+# List all FROM stages and their detected package managers
+python -m shieldbot.fixers.dockerfile_fixer list-stages Dockerfile
+
+# List all RUN install commands and their packages
+python -m shieldbot.fixers.dockerfile_fixer list-installs Dockerfile
+
+# List all image: references in a docker-compose file
+python -m shieldbot.fixers.dockerfile_fixer list-compose-images docker-compose.yml
+
+# Check Docker Hub for a newer/patched base image tag
+python -m shieldbot.fixers.dockerfile_fixer suggest-base-upgrade ubuntu:20.04
+```
 
 ---
 
@@ -170,7 +189,6 @@ jobs:
 | Input | Default | Description |
 |-------|---------|-------------|
 | `path` | `.` | Directory to scan |
-| `min-severity` | `info` | Minimum severity to report (all findings shown by default) |
 | `fail-on` | `high` | Fail build if findings at or above this level |
 | `skip-scanners` | `` | Comma-separated scanners to skip |
 | `scan-git-history` | `false` | Scan git history for leaked secrets |

@@ -1,10 +1,12 @@
 """
-Trivy Docker image scanner.
+Trivy Docker image / filesystem scanner.
 
 Scanning strategy (in order, most to least complete):
   1. docker build → trivy image <built_tag>   (full image — all layers visible)
   2. docker pull  → trivy image <base_image>  (base image — OS-level packages)
   3. trivy fs <repo>                           (filesystem only — no apt/apk packages)
+
+Also scans all images referenced in docker-compose files (all services).
 
 When docker build fails (e.g. network restricted sandbox):
   - Emits a prominent HIGH "SCAN GAP" warning so the user knows OS packages were missed
@@ -316,6 +318,93 @@ class TrivyScanner(BaseScanner):
                     )
                 except json.JSONDecodeError:
                     pass
+
+        # ----------------------------------------------------------------
+        # docker-compose: scan all image: references in all compose files
+        # ----------------------------------------------------------------
+        from shieldbot.fixers.dockerfile_fixer import (
+            find_compose_files,
+            parse_compose_images as _parse_compose_images,
+        )
+
+        compose_files = find_compose_files(repo_path)
+        scanned_compose_images: set[str] = set()
+
+        for compose_file in compose_files:
+            compose_rel = str(compose_file.relative_to(repo))
+            service_refs = _parse_compose_images(compose_file)
+
+            for svc_ref in service_refs:
+                image_ref = svc_ref.image
+                # Skip images already scanned via Dockerfiles or duplicates
+                if image_ref in scanned_compose_images:
+                    coverage_notes.append(
+                        f"SKIP (already scanned): compose {compose_rel} service={svc_ref.service} image={image_ref}"
+                    )
+                    continue
+                scanned_compose_images.add(image_ref)
+
+                # Skip local build references (e.g. "myapp:latest" built above)
+                # and template variables
+                if image_ref.startswith("$") or image_ref.startswith("${"):
+                    coverage_notes.append(
+                        f"SKIP (template variable): {image_ref} in {compose_rel}"
+                    )
+                    continue
+
+                if not docker_available:
+                    coverage_notes.append(
+                        f"SCAN GAP (no Docker): compose {compose_rel} service={svc_ref.service} image={image_ref}"
+                    )
+                    all_findings.append(Finding(
+                        scanner=self.name,
+                        rule_id="trivy:scan-gap:no-docker",
+                        title=f"SCAN GAP — Docker not available, compose image not scanned: {image_ref}",
+                        description=(
+                            f"service '{svc_ref.service}' in {compose_rel} uses image {image_ref}. "
+                            "Docker is not available — cannot scan this image."
+                        ),
+                        severity=Severity.HIGH,
+                        category=FindingCategory.MISCONFIGURATION,
+                        file_path=compose_rel,
+                        line_start=svc_ref.line_no,
+                        remediation=f"Install Docker and re-run, or pass --image {image_ref}",
+                    ))
+                    continue
+
+                # Try to pull and scan the compose image
+                _, pull_stderr, pull_rc = await self._run_subprocess(
+                    ["docker", "pull", image_ref], timeout=180
+                )
+                if pull_rc == 0:
+                    findings, note = await self._scan_image(
+                        trivy_bin, image_ref,
+                        f"{compose_rel} service={svc_ref.service}",
+                        cleanup=False,
+                    )
+                    all_findings.extend(findings)
+                    raw_outputs[f"compose:{compose_rel}:{svc_ref.service}"] = note
+                    coverage_notes.append(
+                        f"SCANNED (compose): {compose_rel} service={svc_ref.service} image={image_ref}"
+                    )
+                else:
+                    coverage_notes.append(
+                        f"SCAN GAP (pull failed): compose {compose_rel} service={svc_ref.service} image={image_ref}"
+                    )
+                    all_findings.append(Finding(
+                        scanner=self.name,
+                        rule_id="trivy:scan-gap:compose-pull-failed",
+                        title=f"SCAN GAP — Could not pull compose image: {image_ref}",
+                        description=(
+                            f"docker pull {image_ref} failed for service '{svc_ref.service}' "
+                            f"in {compose_rel}. Error: {pull_stderr[:200]}"
+                        ),
+                        severity=Severity.MEDIUM,
+                        category=FindingCategory.MISCONFIGURATION,
+                        file_path=compose_rel,
+                        line_start=svc_ref.line_no,
+                        remediation=f"Scan manually: docker pull {image_ref} && trivy image --scanners vuln,secret,misconfig {image_ref}",
+                    ))
 
         # Attach coverage summary to raw output
         raw_outputs["_coverage"] = coverage_notes

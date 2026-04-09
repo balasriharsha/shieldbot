@@ -161,7 +161,6 @@ Call `mcp__shieldbot__check_scanner_tools` to verify which scanners are installe
 Call `mcp__shieldbot__scan_repository` with:
 - `skip_scanners`: [] (run all)
 - `scan_git_history`: false
-- `min_severity`: "info" — **always, to capture every finding**
 - `extra_images`: [] — optionally pass pre-built image names if docker build fails (e.g. `["mcr.microsoft.com/playwright:v1.50-noble"]`)
 
 If MCP is unavailable, fall back to Bash:
@@ -504,6 +503,9 @@ For **every single finding** (skip nothing unless it is a confirmed false positi
 #### Before attempting a fix:
 Read the file at the reported location. Verify the issue still exists at that exact line.
 
+#### Special procedure: Trivy Docker / Compose findings
+Use the Docker Fix Workflow (D1–D6 below) instead of the generic procedure for all `scanner: "trivy"` findings.
+
 #### If the issue is already fixed:
 > **[FINDING #N — ALREADY FIXED]** `<title>`
 > Already resolved at `<file>:<line>` — `<brief explanation of what's already correct>`. Skipping.
@@ -526,6 +528,88 @@ Read the file at the reported location. Verify the issue still exists at that ex
    ```
    - If it **passes**: continue.
    - If it **fails**: revert the last change, mark the finding as **SKIPPED**, explain why, and continue.
+
+---
+
+## Docker Fix Workflow
+
+Run this analysis first:
+```bash
+python3 -m shieldbot.fixers.dockerfile_fixer analyze <DOCKERFILE> /tmp/shieldbot_scan.json
+python3 -m shieldbot.fixers.dockerfile_fixer list-compose-images <COMPOSE_FILE>
+python3 -m shieldbot.fixers.dockerfile_fixer suggest-base-upgrade <image_ref>
+```
+
+### D1 — CVE in a package installed by RUN apt-get/apk/yum
+
+Pin the vulnerable package to its `FixedVersion` from the Trivy finding:
+
+| Package manager | Pin syntax |
+|----------------|-----------|
+| apt-get | `libssl1.0.0=1.0.2n-1ubuntu1.13` |
+| apk | `openssl=3.1.4-r2` |
+| yum/dnf | `openssl-3.0.7-18.el9_2` |
+
+If no `FixedVersion`: mark **SKIPPED**, suggest switching to a distroless image.
+
+### D2 — CVE in a base image package (came from FROM, not installed by RUN)
+
+**D2a — Upgrade the base image tag (preferred):**
+```bash
+python3 -m shieldbot.fixers.dockerfile_fixer suggest-base-upgrade <image>
+docker pull <new_tag> && trivy image --quiet --scanners vuln <new_tag> 2>&1 | head -30
+```
+If cleaner: edit the FROM line. Announce which CVEs are now patched.
+
+**D2b — Add security upgrade step (when FROM upgrade isn't feasible):**
+Insert immediately after the FROM line:
+```dockerfile
+# Debian/Ubuntu:
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+# Alpine:
+RUN apk upgrade --no-cache
+# RHEL/CentOS/UBI:
+RUN yum update -y && yum clean all
+```
+
+### D3 — Multi-stage Dockerfile
+
+Apply D1/D2 independently to **each stage**. Each FROM resets the layer stack — fixes in stage 1 do NOT carry to stage 2.
+
+```bash
+python3 -m shieldbot.fixers.dockerfile_fixer list-stages <DOCKERFILE>
+```
+
+Fix each vulnerable stage separately.
+
+### D4 — docker-compose image vulnerability
+
+```bash
+python3 -m shieldbot.fixers.dockerfile_fixer list-compose-images <COMPOSE_FILE>
+python3 -m shieldbot.fixers.dockerfile_fixer suggest-base-upgrade <image_ref>
+```
+
+Update the `image:` tag to the patched version:
+```diff
+-   image: redis:6.2
++   image: redis:7.2
+```
+
+### D5 — Dockerfile misconfigurations
+
+| Finding | Fix |
+|---------|-----|
+| Running as root | Add `RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser` + `USER appuser` |
+| No HEALTHCHECK | Add `HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD curl -f http://localhost/ \|\| exit 1` |
+| ADD instead of COPY | Replace `ADD <local_path>` with `COPY <local_path>` |
+| Apt cache not cleared | Append `&& rm -rf /var/lib/apt/lists/*` to apt-get RUN chain |
+| Secrets in ENV | Remove from Dockerfile; inject at runtime with `docker run -e KEY=val` or Docker secrets |
+
+### D6 — Secrets baked into image layers
+
+Remove the line that introduces the secret. Add `.dockerignore` entry if a secret file was COPYed. Announce credential must be rotated immediately.
+
+---
 
 #### If the fix is not safe to apply automatically:
 > **[FINDING #N — SKIPPED]** `<title>`
@@ -577,3 +661,6 @@ git -C <REPO_PATH> commit -m "fix: apply shieldbot security fixes ($(date +%Y-%m
 - **Never fix without verifying the issue still exists** at the reported location first.
 - **Never skip a finding silently** — every finding gets an explicit status.
 - Do not invent findings. Only report what scanners produced or what you directly observe.
+- **For Trivy Docker findings:** always use the Docker Fix Workflow (D1–D6). Fix each Dockerfile stage independently. Fix each docker-compose service independently.
+- **Never skip a base image CVE without attempting D2a (base upgrade) or D2b (upgrade step).**
+- **After applying Docker fixes:** optionally re-scan to verify: `docker build ... && trivy image --quiet --scanners vuln <tag> 2>&1 | head -30`

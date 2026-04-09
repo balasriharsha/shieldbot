@@ -1,3 +1,3 @@
 """Shieldbot - Security scanner for the Claude Code agent."""
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"

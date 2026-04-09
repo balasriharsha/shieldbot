@@ -9,7 +9,7 @@ data-gathering layer; the Claude Code agent provides the AI analysis.
 Usage:
     python shieldbot/run_scan.py /path/to/repo
     python shieldbot/run_scan.py /path/to/repo --output-file /tmp/report.json
-    python shieldbot/run_scan.py /path/to/repo --skip bandit --min-severity high
+    python shieldbot/run_scan.py /path/to/repo --skip bandit
     python shieldbot/run_scan.py /path/to/repo --scan-git-history
 """
 
@@ -238,12 +238,6 @@ def main():
             "Example: --image mcr.microsoft.com/playwright:v1.50-noble"
         ),
     )
-    parser.add_argument(
-        "--min-severity",
-        choices=["critical", "high", "medium", "low", "info"],
-        default="info",
-        help="Only include findings at or above this severity in the output",
-    )
     args = parser.parse_args()
 
     repo_path = str(Path(args.repo_path).resolve())
@@ -261,14 +255,6 @@ def main():
             extra_images=args.extra_images or [],
         )
     )
-
-    # Filter by min severity if requested
-    sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-    min_order = sev_order[args.min_severity]
-    report.all_findings = [
-        f for f in report.all_findings
-        if sev_order.get(f.severity.value, 9) <= min_order
-    ]
 
     # Write output
     json_text = write_json_report(report, output_file=args.output_file)

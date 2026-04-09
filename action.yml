@@ -11,10 +11,6 @@ inputs:
     description: Path to the repository to scan (relative to workspace root)
     required: false
     default: '.'
-  min-severity:
-    description: Minimum severity to report (critical, high, medium, low, info)
-    required: false
-    default: info
   skip-scanners:
     description: Comma-separated list of scanners to skip (codeql, semgrep, bandit, ruff, detect-secrets, dependabot, pip-audit, npm-audit, trivy)
     required: false
@@ -90,7 +86,6 @@ runs:
           "$REPO_PATH" \
           --output-file "$JSON_FILE" \
           --output-sarif "$SARIF_FILE" \
-          --min-severity "${{ inputs.min-severity }}" \
           ${{ steps.skip-flags.outputs.flags }} \
           $GIT_HISTORY_FLAG || SCAN_EXIT=$?
 

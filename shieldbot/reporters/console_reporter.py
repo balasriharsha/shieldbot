@@ -29,7 +29,7 @@ _RISK_LABEL_COLORS = {
 }
 
 
-def print_report(report: SecurityReport, min_severity: Severity = Severity.INFO) -> None:
+def print_report(report: SecurityReport) -> None:
     """Print a full security report to the terminal."""
     console.print()
 
@@ -104,22 +104,18 @@ def print_report(report: SecurityReport, min_severity: Severity = Severity.INFO)
         console.print()
 
     # ── Findings ─────────────────────────────────────────────────────────
-    min_order = {
+    sev_order = {
         Severity.CRITICAL: 0, Severity.HIGH: 1,
         Severity.MEDIUM: 2, Severity.LOW: 3, Severity.INFO: 4,
     }
-    min_sev_order = min_order[min_severity]
-
     canonical = [f for f in report.all_findings if not f.duplicate_of]
-    canonical.sort(key=lambda f: min_order.get(f.severity, 9))
+    canonical.sort(key=lambda f: sev_order.get(f.severity, 9))
 
-    shown = [f for f in canonical if min_order.get(f.severity, 9) <= min_sev_order]
-
-    if not shown:
-        console.print("[green]No findings at or above the selected severity threshold.[/green]")
+    if not canonical:
+        console.print("[green]No findings.[/green]")
     else:
-        console.print(f"[bold]Findings ({len(shown)} shown, min severity: {min_severity.value})[/bold]\n")
-        for f in shown:
+        console.print(f"[bold]Findings ({len(canonical)})[/bold]\n")
+        for f in canonical:
             _print_finding(f, report)
 
     # ── Top remediations ─────────────────────────────────────────────────

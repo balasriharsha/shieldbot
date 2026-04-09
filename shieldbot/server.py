@@ -41,7 +41,6 @@ async def scan_repository(
     repo_path: str,
     skip_scanners: list[str] | None = None,
     scan_git_history: bool = False,
-    min_severity: str = "info",
     extra_images: list[str] | None = None,
 ) -> str:
     """
@@ -67,8 +66,6 @@ async def scan_repository(
                        detect-secrets, dependabot, pip-audit, npm-audit, trivy
         scan_git_history: If True, scan git history for leaked secrets
                           (requires gitleaks to be installed).
-        min_severity: Minimum severity to include in output.
-                      One of: critical, high, medium, low, info
         extra_images: Pre-built Docker image names/tags to scan directly with Trivy.
                       Use when docker build fails in a restricted environment.
                       Example: ["mcr.microsoft.com/playwright:v1.50-noble"]
@@ -81,21 +78,12 @@ async def scan_repository(
     if not Path(path).is_dir():
         return json.dumps({"error": f"Not a directory: {repo_path}"})
 
-    sev_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-    min_order = sev_order.get(min_severity, 4)
-
     report = await run_scan(
         repo_path=path,
         skip_scanners=set(skip_scanners or []),
         scan_git_history=scan_git_history,
         extra_images=extra_images or [],
     )
-
-    # Apply severity filter
-    report.all_findings = [
-        f for f in report.all_findings
-        if sev_order.get(f.severity.value, 9) <= min_order
-    ]
 
     return write_json_report(report)
 

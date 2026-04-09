@@ -36,7 +36,6 @@ The MCP server (`shieldbot-mcp`) installs automatically on first use via `uvx`.
 ```
 /shieldbot .
 /shieldbot /path/to/repo
-/shieldbot . --min-severity high
 /shieldbot . --skip ruff --skip bandit
 /shieldbot . --git-history
 ```
