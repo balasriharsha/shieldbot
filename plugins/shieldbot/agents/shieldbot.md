@@ -175,17 +175,21 @@ osv-scanner scan dir <repo_path> --json
 dependabot update pip <owner/repo>
 pip-audit --format json -r <repo_path>/requirements.txt
 npm audit --json --prefix <repo_path>
+docker build -f <repo_path>/Dockerfile -t shieldbot-scan:latest <repo_path>
+trivy image --format json --scanners vuln,secret,misconfig --quiet shieldbot-scan:latest
+docker rmi -f shieldbot-scan:latest
 ```
 
 Scanner install (all open-source, no API keys required):
-- **CodeQL, osv-scanner, and Dependabot CLI are auto-installed** on first scan.
+- **CodeQL, osv-scanner, Dependabot CLI, and Trivy are auto-installed** on first scan.
   Works on macOS and any Linux distro (x86_64 + arm64), no sudo required, installs to `~/.local/bin`.
 - To pre-install manually:
   ```bash
-  shieldbot-install              # installs all three at once
+  shieldbot-install              # installs all four at once
   shieldbot-install --codeql     # CodeQL only
   shieldbot-install --osv        # osv-scanner only
   shieldbot-install --dependabot # Dependabot CLI only (needs Docker at runtime)
+  shieldbot-install --trivy      # Trivy only (needs Docker at runtime for image scans)
   ```
 - Python scanners: `pip install semgrep bandit ruff detect-secrets pip-audit`
 
@@ -367,6 +371,43 @@ Present **every** `scanner: "npm-audit"` finding, one per block.
 
 ---
 
+## 9. Trivy — Docker Image Scan
+
+Present **every** `scanner: "trivy"` finding. Only present this section if a Dockerfile was found in the repository.
+
+### 9a. Container CVEs (OS packages and libraries)
+
+For each finding with `category: "dependency_cve"`:
+
+**[SEVERITY] `<package>` `<version>` — `<CVE-ID>`**
+- **Dockerfile:** `<dockerfile_path>`
+- **Package:** `<pkg_name>` `<installed_version>`
+- **Description:** `<description>`
+- **Fix:** Upgrade to `<fixed_version>` (update base image or pin patched version)
+- **References:** `<urls>`
+
+### 9b. Dockerfile / Image Misconfigurations
+
+For each finding with `category: "misconfiguration"`:
+
+**[SEVERITY] `<rule_id>` — `<title>`**
+- **Dockerfile:** `<dockerfile_path>:<line>`
+- **What it is:** `<description>`
+- **Fix:** `<resolution>`
+
+### 9c. Secrets Baked into Image Layers
+
+For each finding with `category: "secrets"`:
+
+**[HIGH] `<secret_type>`**
+- **Layer source:** `<target>`
+- **Details:** `<match preview>`
+- **Fix:** Remove the secret. Rebuild from scratch. Rotate the exposed credential immediately.
+
+> If no Dockerfile found or Trivy produced no findings: **Trivy: No Dockerfile found / No findings.**
+
+---
+
 ## Summary
 
 ```
@@ -386,6 +427,7 @@ By scanner:
   detect-secrets:  <N>
   pip-audit:       <N>
   npm audit:       <N>
+  Trivy:           <N> (cves: X, misconfigs: X, secrets: X)
 
 Attack surface: <1–2 sentences on the biggest risks>
 ```

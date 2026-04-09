@@ -22,12 +22,14 @@
 | **detect-secrets** | API keys, tokens, passwords, private keys in source code | |
 | **Dependabot CLI** | Ecosystem-specific security updates via GitHub's Dependabot engine (security-updates-only mode, requires Docker at runtime) | ✓ |
 | **osv-scanner** | Dependency CVEs from the OSV / GitHub Advisory Database — works offline, no token required | ✓ |
+| **Trivy** | Docker image CVEs (OS packages + libraries), Dockerfile misconfigurations, and secrets baked into image layers — runs automatically when a Dockerfile is found | ✓ |
 | **pip-audit** | Python dependency CVEs (PyPI Advisory Database) | |
 | **npm audit** | Node.js dependency CVEs | |
 
 All scanners run **in parallel**. Findings are deduplicated, ranked by exploitability, and explained in plain English.
 
-> **Auto-installed tools** (CodeQL, osv-scanner, Dependabot CLI) are downloaded automatically on first scan — no package manager or sudo required. Supports macOS and Linux on x86\_64 and arm64.
+> **Auto-installed tools** (CodeQL, osv-scanner, Dependabot CLI, Trivy) are downloaded automatically on first scan — no package manager or sudo required. Supports macOS and Linux on x86\_64 and arm64.
+> Trivy and Dependabot CLI require Docker at runtime (image builds / ecosystem updaters).
 
 ---
 
@@ -90,10 +92,11 @@ pip install shieldbot-mcp
 CodeQL, osv-scanner, and Dependabot CLI are downloaded automatically on first scan, but you can pre-install them with the bundled CLI:
 
 ```bash
-shieldbot-install              # install all three
+shieldbot-install              # install all four
 shieldbot-install --codeql     # CodeQL only
 shieldbot-install --osv        # osv-scanner only
 shieldbot-install --dependabot # Dependabot CLI only
+shieldbot-install --trivy      # Trivy only
 shieldbot-install --force      # reinstall / upgrade to latest
 ```
 
@@ -109,6 +112,7 @@ All three tools are fully open-source and installed from their official GitHub r
 | CodeQL CLI | [github/codeql-cli-binaries](https://github.com/github/codeql-cli-binaries) | MIT |
 | osv-scanner | [google/osv-scanner](https://github.com/google/osv-scanner) | Apache-2.0 |
 | Dependabot CLI | [dependabot/cli](https://github.com/dependabot/cli) | MIT |
+| Trivy | [aquasecurity/trivy](https://github.com/aquasecurity/trivy) | Apache-2.0 |
 
 ---
 
@@ -124,7 +128,7 @@ All three tools are fully open-source and installed from their official GitHub r
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `repo_path` | string | required | Absolute path to the repository |
-| `skip_scanners` | list | `[]` | Scanners to skip — valid values: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit` |
+| `skip_scanners` | list | `[]` | Scanners to skip — valid values: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`, `trivy` |
 | `scan_git_history` | bool | `false` | Also scan git commit history for leaked secrets |
 | `min_severity` | string | `"info"` | Minimum severity to include (`critical`, `high`, `medium`, `low`, `info`) |
 
@@ -164,7 +168,7 @@ jobs:
 | Input | Default | Description |
 |-------|---------|-------------|
 | `path` | `.` | Directory to scan |
-| `min-severity` | `high` | Minimum severity to report |
+| `min-severity` | `info` | Minimum severity to report (all findings shown by default) |
 | `fail-on` | `high` | Fail build if findings at or above this level |
 | `skip-scanners` | `` | Comma-separated scanners to skip |
 | `scan-git-history` | `false` | Scan git history for leaked secrets |
@@ -195,7 +199,7 @@ Use exit codes to gate deployments in GitHub Actions, GitLab CI, or any pipeline
 1. **Detect** — Shieldbot profiles the repository (languages, package managers, git history)
 2. **Auto-install** — Any missing scanner tools (CodeQL, osv-scanner, Dependabot CLI) are downloaded from GitHub releases for the current OS and architecture
 3. **Scan** — All applicable scanners run in parallel via `asyncio.gather()`
-4. **Deduplicate** — Findings are deduplicated by exact hash and proximity (±3 lines), with scanner priority: CodeQL → Semgrep → Bandit → detect-secrets → Dependabot/osv-scanner → pip-audit/npm-audit
+4. **Deduplicate** — Findings are deduplicated by exact hash and proximity (±3 lines), with scanner priority: CodeQL → Semgrep → Bandit → detect-secrets → Dependabot/osv-scanner → pip-audit/npm-audit → Trivy
 5. **Analyze** — Claude synthesizes raw scanner output into prioritized findings with context
 6. **Report** — Structured output with executive summary, risk score, and remediation steps
 
@@ -205,7 +209,7 @@ Use exit codes to gate deployments in GitHub Actions, GitLab CI, or any pipeline
 
 - Python 3.11+
 - [Claude Code](https://claude.ai/code) (for plugin mode)
-- Docker (optional — only needed at runtime for Dependabot CLI's ecosystem updaters)
+- Docker (optional — required at runtime for Trivy image scanning and Dependabot CLI's ecosystem updaters)
 
 ---
 

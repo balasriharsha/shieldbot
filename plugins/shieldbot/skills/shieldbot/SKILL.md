@@ -14,7 +14,7 @@ The user invoked `/shieldbot-scan` with arguments: $ARGUMENTS
 Parse the arguments:
 - First positional argument: `repo_path` (default: current directory `.`)
 - `--skip <scanner>`: skip a specific scanner (may appear multiple times)
-- `--min-severity <level>`: only show findings at or above this level (default: `high`)
+- `--min-severity <level>`: only show findings at or above this level (default: `info` — all findings)
 - `--git-history`: also scan git commit history for leaked secrets
 
 Then spawn the `shieldbot` agent with the resolved parameters to perform the full security scan and deliver a report.

@@ -46,6 +46,7 @@ from shieldbot.scanners import (
     RuffScanner,
     SecretsScanner,
     SemgrepScanner,
+    TrivyScanner,
 )
 from shieldbot.scanners.base import deduplicate, run_all_parallel
 from shieldbot.reporters.json_reporter import write_json_report
@@ -84,6 +85,12 @@ def detect_project_type(repo_path: str) -> dict:
     has_setup = (root / "setup.py").exists() or (root / "setup.cfg").exists()
     has_package_json = (root / "package.json").exists()
     has_go_mod = (root / "go.mod").exists()
+    _docker_skip = {"node_modules", ".git", "__pycache__", ".venv", "venv", ".tox",
+                    "dist", "build", "vendor", ".cache"}
+    has_dockerfile = any(
+        df for df in root.rglob("Dockerfile*")
+        if not any(p.startswith(".") or p in _docker_skip for p in df.relative_to(root).parts)
+    )
     if has_go_mod:
         languages.add("go")
     if has_pyproject or has_requirements or has_setup:
@@ -95,6 +102,7 @@ def detect_project_type(repo_path: str) -> dict:
         "has_pyproject_toml": has_pyproject,
         "has_package_json": has_package_json,
         "has_go_mod": has_go_mod,
+        "has_dockerfile": has_dockerfile,
     }
 
 
@@ -116,6 +124,7 @@ async def run_scan(
     is_python = "python" in languages
     has_py_deps = profile["has_requirements_txt"] or profile["has_pyproject_toml"]
     has_pkg_json = profile["has_package_json"]
+    has_dockerfile = profile["has_dockerfile"]
 
     # Select Semgrep rulesets
     rulesets = list(SEMGREP_ALWAYS_RULESETS)
@@ -146,6 +155,8 @@ async def run_scan(
         scanners.append(PipAuditScanner())
     if has_pkg_json and "npm-audit" not in skip_scanners:
         scanners.append(NpmAuditScanner())
+    if has_dockerfile and "trivy" not in skip_scanners:
+        scanners.append(TrivyScanner())
 
     # Run all scanners in parallel
     scan_results = await run_all_parallel(
@@ -207,7 +218,7 @@ def main():
         "--skip", action="append", default=[],
         choices=[
             "codeql", "semgrep", "bandit", "ruff",
-            "detect-secrets", "dependabot", "pip-audit", "npm-audit",
+            "detect-secrets", "dependabot", "pip-audit", "npm-audit", "trivy",
         ],
         help="Skip a scanner (repeatable)",
     )

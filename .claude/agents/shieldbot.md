@@ -162,13 +162,13 @@ cd /Users/balasriharsha/BalaSriharsha/shieldbot && python shieldbot/run_scan.py 
 ```
 
 Flags:
-- `--skip <scanner>` — skip a scanner: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`
+- `--skip <scanner>` — skip a scanner: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`, `trivy`
 - `--scan-git-history` — scan git history for leaked secrets
 - `--min-severity info` — always use `info` to capture every finding
 
 Auto-install (macOS + Linux, x86_64 + arm64, no sudo):
 ```bash
-shieldbot-install              # CodeQL + osv-scanner + Dependabot CLI
+shieldbot-install              # CodeQL + osv-scanner + Dependabot CLI + Trivy
 pip install semgrep bandit ruff detect-secrets pip-audit
 ```
 
@@ -361,6 +361,43 @@ Present **every** npm audit finding (`scanner: "npm-audit"`), one per block.
 
 ---
 
+## 9. Trivy — Docker Image Scan
+
+Present **every** Trivy finding (`scanner: "trivy"`). Only present this section if a Dockerfile was found in the repository.
+
+### 9a. Container CVEs (OS packages and libraries)
+
+For each finding with `category: "dependency_cve"`:
+
+**[SEVERITY] `<package>` `<version>` — `<CVE-ID>`**
+- **Dockerfile:** `<dockerfile_path>`
+- **Package:** `<pkg_name>` `<installed_version>`
+- **Description:** `<description>`
+- **Fix:** Upgrade to `<fixed_version>` (update the base image or pin the patched version)
+- **References:** `<urls>`
+
+### 9b. Dockerfile / Image Misconfigurations
+
+For each finding with `category: "misconfiguration"` (rule_id starts with `trivy:misconfig:`):
+
+**[SEVERITY] `<rule_id>` — `<title>`**
+- **Dockerfile:** `<dockerfile_path>:<line>`
+- **What it is:** `<description>`
+- **Fix:** `<resolution>`
+
+### 9c. Secrets Baked into Image Layers
+
+For each finding with `category: "secrets"` (rule_id starts with `trivy:secret:`):
+
+**[HIGH] `<secret_type>`**
+- **Layer source:** `<target>`
+- **Details:** `<match preview>`
+- **Fix:** Remove the secret. Rebuild from scratch. Rotate the exposed credential immediately.
+
+> If no Dockerfile was found or Trivy produced no findings, write: **Trivy: No Dockerfile found / No findings.**
+
+---
+
 ## Summary
 
 ```
@@ -380,6 +417,7 @@ By scanner:
   detect-secrets:  <N>
   pip-audit:       <N>
   npm audit:       <N>
+  Trivy:           <N> (cves: X, misconfigs: X, secrets: X)
 
 Attack surface: <1–2 sentences on the biggest risks>
 ```
@@ -521,5 +559,6 @@ git -C <REPO_PATH> commit -m "fix: apply shieldbot security fixes ($(date +%Y-%m
   osv-scanner scan dir <REPO> --json
   pip-audit --format json -r <REPO>/requirements.txt
   npm audit --json --prefix <REPO>
+  trivy image --format json --scanners vuln,secret,misconfig <image_tag>
   ```
 - Do not invent findings. Only report what scanners produced or what you directly observe in code you read.

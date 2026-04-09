@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "shieldbot-mcp"
-version = "1.0.2"
-description = "AI-powered security code review MCP server for Claude Code — combines CodeQL, Semgrep (5,000+ rules), bandit, detect-secrets, Dependabot CLI, osv-scanner, pip-audit, and npm-audit"
+version = "1.0.3"
+description = "AI-powered security code review MCP server for Claude Code — combines CodeQL, Semgrep (5,000+ rules), bandit, detect-secrets, Dependabot CLI, osv-scanner, Trivy (Docker image scanning), pip-audit, and npm-audit"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

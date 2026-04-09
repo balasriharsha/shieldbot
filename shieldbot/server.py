@@ -29,7 +29,8 @@ mcp = FastMCP(
         "local repository for vulnerabilities, hardcoded secrets, and CVEs using "
         "CodeQL (deep dataflow SAST), Semgrep (5,000+ rules), bandit, ruff, "
         "detect-secrets, osv-scanner/dependabot (OSV/GHSA advisory database), "
-        "pip-audit, and npm-audit — all running in parallel. "
+        "pip-audit, npm-audit, and Trivy (Docker image CVEs/misconfigs/secrets) — "
+        "all running in parallel. "
         "Use check_scanner_tools first if you are unsure which tools are installed."
     ),
 )
@@ -54,6 +55,7 @@ async def scan_repository(
     - osv-scanner / dependabot (dependency CVEs via OSV/GHSA advisory DB)
     - pip-audit (Python CVEs)
     - npm-audit (Node.js CVEs)
+    - trivy (Docker image CVEs, misconfigurations, and baked-in secrets — runs when a Dockerfile is found)
 
     Returns a JSON report with deduplicated, severity-ranked findings.
 
@@ -61,7 +63,7 @@ async def scan_repository(
         repo_path: Absolute or relative path to the repository to scan.
         skip_scanners: Optional list of scanner names to skip.
                        Valid values: codeql, semgrep, bandit, ruff,
-                       detect-secrets, dependabot, pip-audit, npm-audit
+                       detect-secrets, dependabot, pip-audit, npm-audit, trivy
         scan_git_history: If True, scan git history for leaked secrets
                           (requires gitleaks to be installed).
         min_severity: Minimum severity to include in output.
@@ -127,6 +129,13 @@ def check_scanner_tools() -> str:
         "gitleaks": ("gitleaks", "brew install gitleaks"),
         "pip-audit": ("pip-audit", "pip install pip-audit"),
         "npm": ("npm", "Install Node.js from https://nodejs.org"),
+        "trivy": (
+            "trivy",
+            "Auto-installed by shieldbot on first scan (when a Dockerfile is found)  "
+            "or manually: shieldbot-install --trivy  "
+            "(macOS/Linux x86_64+arm64, no sudo required — requires Docker at runtime)",
+        ),
+        "docker": ("docker", "Install Docker from https://docs.docker.com/get-docker/"),
     }
     result = {}
     for name, (binary, install_hint) in tools.items():

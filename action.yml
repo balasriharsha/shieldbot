@@ -14,9 +14,9 @@ inputs:
   min-severity:
     description: Minimum severity to report (critical, high, medium, low, info)
     required: false
-    default: high
+    default: info
   skip-scanners:
-    description: Comma-separated list of scanners to skip (semgrep, bandit, ruff, detect-secrets, pip-audit, npm-audit)
+    description: Comma-separated list of scanners to skip (codeql, semgrep, bandit, ruff, detect-secrets, dependabot, pip-audit, npm-audit, trivy)
     required: false
     default: ''
   scan-git-history:

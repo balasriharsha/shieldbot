@@ -43,6 +43,7 @@ SCANNER_PRIORITY: dict[str, int] = {
     "dependabot": 5,    # Dependency CVEs from OSV / GHSA
     "pip-audit": 6,
     "npm-audit": 6,
+    "trivy": 7,         # Container image CVEs, misconfigs, secrets
 }
 
 # Semgrep subprocess settings
@@ -56,7 +57,7 @@ CODEQL_DB_TIMEOUT = 300          # seconds for database creation per language
 CODEQL_ANALYZE_TIMEOUT = 600     # seconds for analysis per language
 
 # Scanners that are optional (warn but don't fail if missing)
-OPTIONAL_SCANNERS = {"ruff", "gitleaks", "codeql", "dependabot"}
+OPTIONAL_SCANNERS = {"ruff", "gitleaks", "codeql", "dependabot", "trivy"}
 
 # Max lines of code snippet to store per finding
 MAX_SNIPPET_LINES = 10

@@ -9,6 +9,7 @@ from shieldbot.scanners.pip_audit_scanner import PipAuditScanner
 from shieldbot.scanners.ruff_scanner import RuffScanner
 from shieldbot.scanners.secrets_scanner import SecretsScanner
 from shieldbot.scanners.semgrep_scanner import SemgrepScanner
+from shieldbot.scanners.trivy_scanner import TrivyScanner
 
 __all__ = [
     "BaseScanner",
@@ -22,4 +23,5 @@ __all__ = [
     "NpmAuditScanner",
     "CodeQLScanner",
     "DependabotScanner",
+    "TrivyScanner",
 ]

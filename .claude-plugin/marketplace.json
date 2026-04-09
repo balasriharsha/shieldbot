@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "shieldbot",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Shieldbot — AI-powered security code review plugin for Claude Code",
   "owner": {
     "name": "Bala Sriharsha",
@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "shieldbot",
-      "description": "AI-powered security code review agent. Combines Semgrep (5,000+ rules), bandit, ruff, detect-secrets, pip-audit, and npm-audit to detect vulnerabilities, hardcoded secrets, and CVEs — then delivers a prioritized, actionable security report.",
-      "version": "1.0.2",
+      "description": "AI-powered security code review agent. Combines CodeQL, Semgrep (5,000+ rules), bandit, ruff, detect-secrets, Trivy (Docker image scanning), Dependabot CLI, osv-scanner, pip-audit, and npm-audit to detect vulnerabilities, hardcoded secrets, and CVEs — then delivers a prioritized, actionable security report.",
+      "version": "1.0.3",
       "author": {
         "name": "Bala Sriharsha",
         "url": "https://github.com/BalaSriharsha/shieldbot"

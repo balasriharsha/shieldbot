@@ -47,6 +47,7 @@ BIN_DIR        = Path.home() / ".local" / "bin"
 _CODEQL_REPO       = "github/codeql-cli-binaries"
 _OSVSCANNER_REPO   = "google/osv-scanner"
 _DEPENDABOT_REPO   = "dependabot/cli"
+_TRIVY_REPO        = "aquasecurity/trivy"
 
 
 # ---------------------------------------------------------------------------
@@ -409,23 +410,108 @@ async def ensure_dependabot_cli() -> Optional[Path]:
 
 
 # ---------------------------------------------------------------------------
-# Convenience: install / ensure all three tools at once
+# Trivy installer
+# ---------------------------------------------------------------------------
+
+def _trivy_asset_name(tag: str, os_name: str, arch: str) -> str:
+    """
+    Asset names at aquasecurity/trivy (tag is e.g. "v0.59.1"):
+      trivy_0.59.1_Linux-64bit.tar.gz
+      trivy_0.59.1_Linux-ARM64.tar.gz
+      trivy_0.59.1_macOS-64bit.tar.gz
+      trivy_0.59.1_macOS-ARM64.tar.gz
+    Version in the asset name strips the leading "v".
+    """
+    version = tag.lstrip("v")
+    os_key  = "macOS" if os_name == "macos" else "Linux"
+    arch_key = "ARM64" if arch == "arm64" else "64bit"
+    return f"trivy_{version}_{os_key}-{arch_key}.tar.gz"
+
+
+async def install_trivy(force: bool = False) -> Path:
+    """
+    Install the Trivy CLI to ~/.local/bin/trivy.
+    Source: https://github.com/aquasecurity/trivy/releases
+
+    Skips if already installed (pass force=True to reinstall).
+    """
+    _ensure_bin_dir_on_path()
+    binary_path = BIN_DIR / "trivy"
+
+    if not force and binary_path.exists():
+        _print(f"Trivy already installed at {binary_path}")
+        return binary_path
+
+    os_name, arch = _detect_platform()
+    tag        = _github_latest_tag(_TRIVY_REPO)
+    asset_name = _trivy_asset_name(tag, os_name, arch)
+    url        = _github_asset_url(_TRIVY_REPO, tag, asset_name)
+
+    _print(f"Installing Trivy {tag} for {os_name}/{arch}")
+
+    with tempfile.TemporaryDirectory(prefix="shieldbot_trivy_dl_") as tmp:
+        tgz_path = Path(tmp) / asset_name
+        await _download_file(url, tgz_path, f"Trivy {tag}")
+
+        _print("Extracting ...")
+        extract_dir = Path(tmp) / "extracted"
+        extract_dir.mkdir()
+
+        with tarfile.open(tgz_path, "r:gz") as tf:
+            tf.extractall(extract_dir)
+
+        found_bin: Optional[Path] = None
+        for candidate in sorted(extract_dir.rglob("trivy")):
+            if candidate.is_file():
+                found_bin = candidate
+                break
+
+        if found_bin is None:
+            raise RuntimeError(
+                f"Could not find 'trivy' binary inside {asset_name}. "
+                "Archive layout may have changed — please report this."
+            )
+
+        shutil.copy2(found_bin, binary_path)
+
+    binary_path.chmod(
+        binary_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    )
+    _print(f"Trivy {tag} installed → {binary_path}")
+    return binary_path
+
+
+async def ensure_trivy() -> Optional[Path]:
+    """Return the trivy binary path, installing it if missing."""
+    if p := shutil.which("trivy"):
+        return Path(p)
+    try:
+        return await install_trivy()
+    except Exception as exc:  # noqa: BLE001
+        _print(f"WARNING: Could not auto-install Trivy: {exc}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Convenience: install / ensure all tools at once
 # ---------------------------------------------------------------------------
 
 async def ensure_all_tools() -> dict[str, Optional[Path]]:
     """
-    Install CodeQL, osv-scanner, and Dependabot CLI if missing.
-    Runs all three installs in parallel. Returns a dict of paths (None on failure).
+    Install CodeQL, osv-scanner, Dependabot CLI, and Trivy if missing.
+    Runs all installs in parallel. Returns a dict of paths (None on failure).
     """
-    codeql_path, osv_path, dependabot_path = await asyncio.gather(
+    codeql_path, osv_path, dependabot_path, trivy_path = await asyncio.gather(
         ensure_codeql(),
         ensure_osv_scanner(),
         ensure_dependabot_cli(),
+        ensure_trivy(),
     )
     return {
         "codeql":      codeql_path,
         "osv-scanner": osv_path,
         "dependabot":  dependabot_path,
+        "trivy":       trivy_path,
     }
 
 
@@ -435,14 +521,15 @@ async def ensure_all_tools() -> dict[str, Optional[Path]]:
 
 def main() -> None:
     """
-    Install CodeQL CLI, osv-scanner, and Dependabot CLI on the current system.
+    Install CodeQL CLI, osv-scanner, Dependabot CLI, and Trivy on the current system.
 
     Usage:
-        shieldbot-install                      # install all three
+        shieldbot-install                      # install all four
         shieldbot-install --force              # reinstall even if already present
         shieldbot-install --codeql             # CodeQL only
         shieldbot-install --osv                # osv-scanner only
         shieldbot-install --dependabot         # Dependabot CLI only
+        shieldbot-install --trivy              # Trivy only
 
     Installs to ~/.local/bin (no sudo required).
     Supports macOS (x86_64 / arm64) and Linux (x86_64 / arm64).
@@ -460,9 +547,10 @@ def main() -> None:
     parser.add_argument("--codeql",     action="store_true", help="Install CodeQL CLI only")
     parser.add_argument("--osv",        action="store_true", help="Install osv-scanner only")
     parser.add_argument("--dependabot", action="store_true", help="Install Dependabot CLI only")
+    parser.add_argument("--trivy",      action="store_true", help="Install Trivy only")
     args = parser.parse_args()
 
-    install_all = not args.codeql and not args.osv and not args.dependabot
+    install_all = not args.codeql and not args.osv and not args.dependabot and not args.trivy
 
     async def _run() -> None:
         tasks: list = []
@@ -472,6 +560,8 @@ def main() -> None:
             tasks.append(("osv-scanner",    install_osv_scanner(force=args.force)))
         if args.dependabot or install_all:
             tasks.append(("Dependabot CLI", install_dependabot_cli(force=args.force)))
+        if args.trivy or install_all:
+            tasks.append(("Trivy",          install_trivy(force=args.force)))
 
         labels    = [t[0] for t in tasks]
         coroutines = [t[1] for t in tasks]
@@ -489,7 +579,8 @@ def main() -> None:
             sys.exit(1)
 
         print(
-            f"\n[shieldbot-install] All done. Binaries installed to {BIN_DIR}\n\n"
+            f"\n[shieldbot-install] All done. Binaries installed to {BIN_DIR}\n"
+            f"Note: Trivy and Dependabot CLI require Docker at runtime for image/ecosystem scans.\n\n"
             f"Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.) if needed:\n"
             f'  export PATH="{BIN_DIR}:$PATH"',
             file=sys.stderr,
