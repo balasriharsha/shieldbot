@@ -30,6 +30,7 @@ All scanners run **in parallel**. Findings are deduplicated, ranked by exploitab
 
 > **Auto-installed tools** (CodeQL, osv-scanner, Dependabot CLI, Trivy) are downloaded automatically on first scan — no package manager or sudo required. Supports macOS and Linux on x86\_64 and arm64.
 > Trivy and Dependabot CLI require Docker at runtime (image builds / ecosystem updaters).
+> **Trivy scan strategy:** (1) `docker build` → full image scan; (2) `docker pull <base_image>` → base image scan if build fails; (3) `trivy fs` filesystem fallback. When Docker build fails (e.g. network restrictions in CI), a prominent **SCAN GAP** warning is emitted and the base image is scanned directly. Pass `--image <tag>` / `extra_images` to scan a pre-built image directly.
 
 ---
 
@@ -131,6 +132,7 @@ All three tools are fully open-source and installed from their official GitHub r
 | `skip_scanners` | list | `[]` | Scanners to skip — valid values: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`, `trivy` |
 | `scan_git_history` | bool | `false` | Also scan git commit history for leaked secrets |
 | `min_severity` | string | `"info"` | Minimum severity to include (`critical`, `high`, `medium`, `low`, `info`) |
+| `extra_images` | list | `[]` | Pre-built Docker image names/tags to scan directly with Trivy — use when `docker build` fails in restricted environments (e.g. `["mcr.microsoft.com/playwright:v1.50-noble"]`) |
 
 ---
 

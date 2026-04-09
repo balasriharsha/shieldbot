@@ -162,6 +162,7 @@ Call `mcp__shieldbot__scan_repository` with:
 - `skip_scanners`: [] (run all)
 - `scan_git_history`: false
 - `min_severity`: "info" — **always, to capture every finding**
+- `extra_images`: [] — optionally pass pre-built image names if docker build fails (e.g. `["mcr.microsoft.com/playwright:v1.50-noble"]`)
 
 If MCP is unavailable, fall back to Bash:
 ```bash
@@ -178,6 +179,11 @@ npm audit --json --prefix <repo_path>
 docker build -f <repo_path>/Dockerfile -t shieldbot-scan:latest <repo_path>
 trivy image --format json --scanners vuln,secret,misconfig --quiet shieldbot-scan:latest
 docker rmi -f shieldbot-scan:latest
+# If build fails, scan base image directly:
+# BASE=$(grep -m1 '^FROM' <repo_path>/Dockerfile | awk '{print $2}')
+# docker pull $BASE && trivy image --format json --scanners vuln,secret,misconfig $BASE
+# Also run filesystem scan (catches npm/pip but NOT apt/apk):
+# trivy fs --format json --scanners vuln,secret --quiet <repo_path>
 ```
 
 Scanner install (all open-source, no API keys required):
@@ -403,6 +409,22 @@ For each finding with `category: "secrets"`:
 - **Layer source:** `<target>`
 - **Details:** `<match preview>`
 - **Fix:** Remove the secret. Rebuild from scratch. Rotate the exposed credential immediately.
+
+### 9d. Scan Coverage Report
+
+**Always** print the coverage status from `raw_output._coverage`:
+
+```
+Trivy scan coverage:
+  ✓ SCANNED (full build):   <image>     — full OS + app layers visible
+  ✓ SCANNED (base image):   <image>     — OS packages from base image
+  ✓ SCANNED (filesystem):   <repo>      — npm/pip/go deps only
+  ✗ SCAN GAP (build failed): <path>     — OS packages (apt/apk) NOT scanned
+  ✗ SCAN GAP (pull failed):  <image>    — base image OS packages NOT scanned
+```
+
+If any SCAN GAP entries exist, warn:
+> **⚠ WARNING: OS-level packages were NOT scanned.** Re-run with `extra_images: ["<base_image>"]` or in an environment with Docker network access for complete coverage.
 
 > If no Dockerfile found or Trivy produced no findings: **Trivy: No Dockerfile found / No findings.**
 

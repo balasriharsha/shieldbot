@@ -42,6 +42,7 @@ async def scan_repository(
     skip_scanners: list[str] | None = None,
     scan_git_history: bool = False,
     min_severity: str = "info",
+    extra_images: list[str] | None = None,
 ) -> str:
     """
     Run a full security scan on a repository.
@@ -68,6 +69,9 @@ async def scan_repository(
                           (requires gitleaks to be installed).
         min_severity: Minimum severity to include in output.
                       One of: critical, high, medium, low, info
+        extra_images: Pre-built Docker image names/tags to scan directly with Trivy.
+                      Use when docker build fails in a restricted environment.
+                      Example: ["mcr.microsoft.com/playwright:v1.50-noble"]
 
     Returns:
         JSON string containing the full SecurityReport with all findings,
@@ -84,6 +88,7 @@ async def scan_repository(
         repo_path=path,
         skip_scanners=set(skip_scanners or []),
         scan_git_history=scan_git_history,
+        extra_images=extra_images or [],
     )
 
     # Apply severity filter

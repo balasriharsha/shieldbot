@@ -115,6 +115,7 @@ async def run_scan(
     repo_path: str,
     skip_scanners: set[str],
     scan_git_history: bool,
+    extra_images: list[str] | None = None,
 ) -> SecurityReport:
     start = time.monotonic()
     report_id = hashlib.sha256(f"{repo_path}{start}".encode()).hexdigest()[:12]
@@ -155,7 +156,8 @@ async def run_scan(
         scanners.append(PipAuditScanner())
     if has_pkg_json and "npm-audit" not in skip_scanners:
         scanners.append(NpmAuditScanner())
-    if has_dockerfile and "trivy" not in skip_scanners:
+    # Trivy runs if there's a Dockerfile OR explicit image names were passed
+    if (has_dockerfile or extra_images) and "trivy" not in skip_scanners:
         scanners.append(TrivyScanner())
 
     # Run all scanners in parallel
@@ -163,6 +165,7 @@ async def run_scan(
         scanners, repo_path,
         languages=languages,
         scan_git_history=scan_git_history,
+        extra_images=extra_images or [],
     )
 
     # Aggregate and deduplicate
@@ -227,6 +230,15 @@ def main():
         help="Scan git commit history for leaked secrets (requires gitleaks)",
     )
     parser.add_argument(
+        "--image", action="append", default=[], dest="extra_images",
+        metavar="IMAGE",
+        help=(
+            "Pre-built Docker image name/tag to scan directly with Trivy "
+            "(repeatable). Use when docker build fails in a restricted environment. "
+            "Example: --image mcr.microsoft.com/playwright:v1.50-noble"
+        ),
+    )
+    parser.add_argument(
         "--min-severity",
         choices=["critical", "high", "medium", "low", "info"],
         default="info",
@@ -246,6 +258,7 @@ def main():
             repo_path=repo_path,
             skip_scanners=set(args.skip),
             scan_git_history=args.scan_git_history,
+            extra_images=args.extra_images or [],
         )
     )
 

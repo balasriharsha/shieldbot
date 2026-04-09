@@ -165,12 +165,19 @@ Flags:
 - `--skip <scanner>` — skip a scanner: `codeql`, `semgrep`, `bandit`, `ruff`, `detect-secrets`, `dependabot`, `pip-audit`, `npm-audit`, `trivy`
 - `--scan-git-history` — scan git history for leaked secrets
 - `--min-severity info` — always use `info` to capture every finding
+- `--image <name:tag>` — pass a pre-built Docker image to scan directly (repeatable). Use when docker build fails.
 
 Auto-install (macOS + Linux, x86_64 + arm64, no sudo):
 ```bash
 shieldbot-install              # CodeQL + osv-scanner + Dependabot CLI + Trivy
 pip install semgrep bandit ruff detect-secrets pip-audit
 ```
+
+**If you see a `SCAN GAP` finding in the Trivy section:** docker build failed in this environment (likely network restriction). OS-level packages (apt/apk packages like ffmpeg, libsoup, gstreamer) were NOT scanned. Inform the user:
+> "Docker build failed — OS-level packages in the image are NOT covered by this scan. To get full coverage, either:
+> 1. Re-run in an environment with Docker network access
+> 2. Pre-build the image locally and pass it: `--image <your-image:tag>`
+> 3. Or pull the base image directly: `docker pull <base_image>` then re-scan"
 
 ---
 
@@ -393,6 +400,22 @@ For each finding with `category: "secrets"` (rule_id starts with `trivy:secret:`
 - **Layer source:** `<target>`
 - **Details:** `<match preview>`
 - **Fix:** Remove the secret. Rebuild from scratch. Rotate the exposed credential immediately.
+
+### 9d. Scan Coverage Report
+
+**Always** print the coverage status from `raw_output._coverage`. This tells the user exactly what was and wasn't scanned:
+
+```
+Trivy scan coverage:
+  ✓ SCANNED (full build):   <image>     — full OS + app layers visible
+  ✓ SCANNED (base image):   <image>     — OS packages from base image
+  ✓ SCANNED (filesystem):   <repo>      — npm/pip/go deps only
+  ✗ SCAN GAP (build failed): <path>     — OS packages (apt/apk) NOT scanned
+  ✗ SCAN GAP (pull failed):  <image>    — base image OS packages NOT scanned
+```
+
+If any `SCAN GAP` entries exist, prominently warn:
+> **⚠ WARNING: OS-level packages were NOT scanned.** Vulnerabilities in apt/apk-installed packages (ffmpeg, libsoup, gstreamer, system libraries) are invisible to this scan. Re-run with `--image <pre-built-tag>` or in an environment with Docker network access for complete coverage.
 
 > If no Dockerfile was found or Trivy produced no findings, write: **Trivy: No Dockerfile found / No findings.**
 
