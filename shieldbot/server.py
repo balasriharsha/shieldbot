@@ -27,7 +27,9 @@ mcp = FastMCP(
     instructions=(
         "Shieldbot is a security code review agent. Use scan_repository to scan a "
         "local repository for vulnerabilities, hardcoded secrets, and CVEs using "
-        "Semgrep (5,000+ rules), bandit, detect-secrets, pip-audit, and npm-audit. "
+        "CodeQL (deep dataflow SAST), Semgrep (5,000+ rules), bandit, ruff, "
+        "detect-secrets, osv-scanner/dependabot (OSV/GHSA advisory database), "
+        "pip-audit, and npm-audit — all running in parallel. "
         "Use check_scanner_tools first if you are unsure which tools are installed."
     ),
 )
@@ -43,15 +45,23 @@ async def scan_repository(
     """
     Run a full security scan on a repository.
 
-    Executes Semgrep (5,000+ rules), bandit, ruff, detect-secrets,
-    pip-audit, and npm-audit in parallel. Returns a JSON report with
-    deduplicated, severity-ranked findings.
+    Executes the following scanners in parallel:
+    - CodeQL (deep dataflow / taint-analysis SAST, open-source CLI)
+    - Semgrep (5,000+ OWASP/CWE rules)
+    - bandit (Python-specific security linter)
+    - ruff (Python quality + security patterns)
+    - detect-secrets / gitleaks (hardcoded secrets)
+    - osv-scanner / dependabot (dependency CVEs via OSV/GHSA advisory DB)
+    - pip-audit (Python CVEs)
+    - npm-audit (Node.js CVEs)
+
+    Returns a JSON report with deduplicated, severity-ranked findings.
 
     Args:
         repo_path: Absolute or relative path to the repository to scan.
         skip_scanners: Optional list of scanner names to skip.
-                       Valid values: semgrep, bandit, ruff, detect-secrets,
-                       pip-audit, npm-audit
+                       Valid values: codeql, semgrep, bandit, ruff,
+                       detect-secrets, dependabot, pip-audit, npm-audit
         scan_git_history: If True, scan git history for leaked secrets
                           (requires gitleaks to be installed).
         min_severity: Minimum severity to include in output.
@@ -92,6 +102,24 @@ def check_scanner_tools() -> str:
     status and install path (or install instructions if missing).
     """
     tools = {
+        "codeql": (
+            "codeql",
+            "Auto-installed by shieldbot on first scan  "
+            "or manually: shieldbot-install --codeql  "
+            "(macOS/Linux x86_64+arm64, no sudo required)",
+        ),
+        "osv-scanner": (
+            "osv-scanner",
+            "Auto-installed by shieldbot on first scan  "
+            "or manually: shieldbot-install --osv  "
+            "(macOS/Linux x86_64+arm64, no sudo required)",
+        ),
+        "dependabot": (
+            "dependabot",
+            "Auto-installed by shieldbot on first scan  "
+            "or manually: shieldbot-install --dependabot  "
+            "(source: https://github.com/dependabot/cli — requires Docker at runtime)",
+        ),
         "semgrep": ("semgrep", "pip install semgrep"),
         "bandit": ("bandit", "pip install bandit"),
         "ruff": ("ruff", "pip install ruff"),

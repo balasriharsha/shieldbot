@@ -34,13 +34,15 @@ SEMGREP_LANGUAGE_RULESETS: dict[str, list[str]] = {
 
 # Scanner priority for deduplication (lower = higher priority, keeps its data)
 SCANNER_PRIORITY: dict[str, int] = {
-    "semgrep": 0,
-    "bandit": 1,
-    "ruff": 2,
-    "detect-secrets": 3,
-    "gitleaks": 3,
-    "pip-audit": 4,
-    "npm-audit": 4,
+    "codeql": 0,        # Highest priority: deep dataflow / taint analysis
+    "semgrep": 1,
+    "bandit": 2,
+    "ruff": 3,
+    "detect-secrets": 4,
+    "gitleaks": 4,
+    "dependabot": 5,    # Dependency CVEs from OSV / GHSA
+    "pip-audit": 6,
+    "npm-audit": 6,
 }
 
 # Semgrep subprocess settings
@@ -49,8 +51,12 @@ SEMGREP_MAX_MEMORY_MB = 2000
 SEMGREP_JOBS = 4
 SEMGREP_OVERALL_TIMEOUT = 600    # 10 minutes total
 
+# CodeQL subprocess settings
+CODEQL_DB_TIMEOUT = 300          # seconds for database creation per language
+CODEQL_ANALYZE_TIMEOUT = 600     # seconds for analysis per language
+
 # Scanners that are optional (warn but don't fail if missing)
-OPTIONAL_SCANNERS = {"ruff", "gitleaks"}
+OPTIONAL_SCANNERS = {"ruff", "gitleaks", "codeql", "dependabot"}
 
 # Max lines of code snippet to store per finding
 MAX_SNIPPET_LINES = 10

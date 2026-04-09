@@ -39,6 +39,8 @@ from shieldbot.config import (
 from shieldbot.models import SecurityReport, Severity
 from shieldbot.scanners import (
     BanditScanner,
+    CodeQLScanner,
+    DependabotScanner,
     NpmAuditScanner,
     PipAuditScanner,
     RuffScanner,
@@ -126,6 +128,9 @@ async def run_scan(
 
     # Build scanner list
     scanners = []
+    # --- SAST scanners ---
+    if "codeql" not in skip_scanners:
+        scanners.append(CodeQLScanner())
     if "semgrep" not in skip_scanners:
         scanners.append(SemgrepScanner(rulesets=rulesets))
     if is_python and "bandit" not in skip_scanners:
@@ -134,6 +139,9 @@ async def run_scan(
         scanners.append(RuffScanner())
     if "detect-secrets" not in skip_scanners:
         scanners.append(SecretsScanner())
+    # --- Dependency / CVE scanners ---
+    if "dependabot" not in skip_scanners:
+        scanners.append(DependabotScanner())
     if has_py_deps and "pip-audit" not in skip_scanners:
         scanners.append(PipAuditScanner())
     if has_pkg_json and "npm-audit" not in skip_scanners:
@@ -197,7 +205,10 @@ def main():
     )
     parser.add_argument(
         "--skip", action="append", default=[],
-        choices=["semgrep", "bandit", "ruff", "detect-secrets", "pip-audit", "npm-audit"],
+        choices=[
+            "codeql", "semgrep", "bandit", "ruff",
+            "detect-secrets", "dependabot", "pip-audit", "npm-audit",
+        ],
         help="Skip a scanner (repeatable)",
     )
     parser.add_argument(

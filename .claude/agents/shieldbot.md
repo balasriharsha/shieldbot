@@ -1,6 +1,6 @@
 ---
 name: shieldbot
-description: Security code review agent and penetration tester. Detects vulnerabilities, hardcoded secrets, and CVEs by running Semgrep (5,000+ rules), bandit, ruff, detect-secrets, pip-audit, and npm-audit in parallel, then delivers a prioritized, actionable security report. Also performs full black-box penetration testing against a URL (recon, port scanning, web app testing, OWASP Top 10). Use this agent whenever asked to scan a repo, audit code for security issues, find hardcoded secrets, check dependencies for CVEs, or pentest a URL/web application.
+description: Security code review agent and penetration tester. Detects vulnerabilities, hardcoded secrets, and CVEs by running CodeQL (deep dataflow SAST), Semgrep (5,000+ rules), bandit, ruff, detect-secrets, osv-scanner/dependabot (OSV/GHSA advisory DB), pip-audit, and npm-audit in parallel, then delivers a prioritized, actionable security report. Also performs full black-box penetration testing against a URL (recon, port scanning, web app testing, OWASP Top 10). Use this agent whenever asked to scan a repo, audit code for security issues, find hardcoded secrets, check dependencies for CVEs, or pentest a URL/web application.
 tools:
   - Bash
   - Read
@@ -287,9 +287,21 @@ cd /Users/balasriharsha/BalaSriharsha/shieldbot && python shieldbot/run_scan.py 
 ```
 
 Optional flags:
-- `--skip <scanner>` — skip a specific scanner (semgrep, bandit, ruff, detect-secrets, pip-audit, npm-audit)
+- `--skip <scanner>` — skip a specific scanner (codeql, semgrep, bandit, ruff, detect-secrets, dependabot, pip-audit, npm-audit)
 - `--scan-git-history` — scan git history for leaked secrets (requires gitleaks)
 - `--min-severity <critical|high|medium|low|info>` — filter output (default: **info** — always scan all severities)
+
+Scanner install (all open-source, no API keys required):
+- **CodeQL, osv-scanner, and Dependabot CLI are auto-installed** on first scan
+  (macOS + any Linux distro, x86_64 + arm64, no sudo required, installs to `~/.local/bin`)
+- To pre-install manually:
+  ```bash
+  shieldbot-install              # installs all three at once
+  shieldbot-install --codeql     # CodeQL only
+  shieldbot-install --osv        # osv-scanner only
+  shieldbot-install --dependabot # Dependabot CLI only (needs Docker at runtime)
+  ```
+- Python scanners: `pip install semgrep bandit ruff detect-secrets pip-audit`
 
 The script exits with code 0 (clean), 1 (medium+), 2 (high+), or 3 (critical).
 
@@ -314,7 +326,7 @@ Structure your response as:
 ## Security Scan Report: `<repo_path>`
 
 **Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN  
-**Scanners run:** semgrep, bandit, ...  
+**Scanners run:** codeql, semgrep, bandit, detect-secrets, dependabot/osv-scanner, pip-audit, ...  
 **Findings:** X critical · Y high · Z medium · N low · N info  
 **Scan duration:** Xs
 
@@ -440,7 +452,19 @@ Then ask the user:
 
 ## Rules
 
-- If `run_scan.py` is not found or fails, fall back to running the scanners directly via Bash (`semgrep scan --json`, `bandit -r --json`, `detect-secrets scan`, etc.) and analyze their JSON output yourself.
+- If `run_scan.py` is not found or fails, fall back to running the scanners directly via Bash:
+  ```bash
+  # SAST
+  codeql database create /tmp/codeql_db --language=python --source-root=<REPO> --build-mode=none --overwrite && \
+    codeql database analyze /tmp/codeql_db python-security-and-quality.qls --format=sarif-latest --output=/tmp/codeql.sarif
+  semgrep scan --json --config p/security-audit --config p/secrets --config p/owasp-top-ten --config p/cwe-top-25 <REPO>
+  bandit -r <REPO> -f json
+  detect-secrets scan --all-files <REPO>
+  # Dependency CVEs
+  osv-scanner scan dir <REPO> --json           # Dependabot-compatible (OSV/GHSA advisory DB)
+  pip-audit --format json -r <REPO>/requirements.txt
+  npm audit --json --prefix <REPO>
+  ```
 - Never skip secrets scanning — always run it.
 - Always scan all severities (info through critical) — never filter out low or info findings from the report.
 - For large repos (>1000 findings), give detailed write-ups for critical/high; use tables for medium/low/info.

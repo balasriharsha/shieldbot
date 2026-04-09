@@ -1,6 +1,6 @@
 ---
 name: shieldbot
-description: Security code review agent and penetration tester. Detects vulnerabilities, hardcoded secrets, and CVEs by running Semgrep (5,000+ rules), bandit, ruff, detect-secrets, pip-audit, and npm-audit in parallel via the shieldbot MCP server, then delivers a prioritized, actionable security report. Also performs full black-box penetration testing against a URL (recon, port scanning, web app testing, OWASP Top 10). Use this agent whenever asked to scan a repo, audit code for security issues, find hardcoded secrets, check dependencies for CVEs, or pentest a URL/web application.
+description: Security code review agent and penetration tester. Detects vulnerabilities, hardcoded secrets, and CVEs by running CodeQL (deep dataflow SAST), Semgrep (5,000+ rules), bandit, ruff, detect-secrets, osv-scanner/dependabot (OSV/GHSA advisory DB), pip-audit, and npm-audit in parallel via the shieldbot MCP server, then delivers a prioritized, actionable security report. Also performs full black-box penetration testing against a URL (recon, port scanning, web app testing, OWASP Top 10). Use this agent whenever asked to scan a repo, audit code for security issues, find hardcoded secrets, check dependencies for CVEs, or pentest a URL/web application.
 tools: Bash, Read, Grep, Glob
 model: sonnet
 color: red
@@ -285,11 +285,42 @@ Call `mcp__shieldbot__scan_repository` with the repository path. Always use thes
 
 The tool returns a JSON report. If the MCP server is unavailable, fall back to running scanners directly via Bash:
 ```bash
-semgrep scan --json --config p/security-audit --config p/secrets --config p/owasp-top-ten <repo_path>
+# Deep SAST via CodeQL (open-source CLI, no API key)
+codeql database create /tmp/codeql_db --language=python --source-root=<repo_path> --build-mode=none --overwrite
+codeql database analyze /tmp/codeql_db python-security-and-quality.qls --format=sarif-latest --output=/tmp/codeql.sarif
+
+# Semgrep SAST
+semgrep scan --json --config p/security-audit --config p/secrets --config p/owasp-top-ten --config p/cwe-top-25 <repo_path>
+
+# Python-specific
 bandit -r <repo_path> -f json
 detect-secrets scan --all-files <repo_path>
+
+# Dependency CVEs — osv-scanner (OSV/GHSA advisory DB, offline, no tokens)
+osv-scanner scan dir <repo_path> --json
+
+# Dependabot CLI (https://github.com/dependabot/cli) — needs Docker + GitHub remote
+# Generates a security-focused job YAML and runs against the GitHub repo
+dependabot update pip <owner/repo>           # Python
+dependabot update npm_and_yarn <owner/repo>  # Node.js
+dependabot update go_modules <owner/repo>    # Go
+
+# Ecosystem-specific dependency audits
 pip-audit --format json -r <repo_path>/requirements.txt
+npm audit --json --prefix <repo_path>
 ```
+
+Scanner install (all open-source, no API keys required):
+- **CodeQL, osv-scanner, and Dependabot CLI are auto-installed** on first scan.
+  Works on macOS and any Linux distro (x86_64 + arm64), no sudo required, installs to `~/.local/bin`.
+- To pre-install manually:
+  ```bash
+  shieldbot-install              # installs all three at once
+  shieldbot-install --codeql     # CodeQL only
+  shieldbot-install --osv        # osv-scanner only
+  shieldbot-install --dependabot # Dependabot CLI only (needs Docker at runtime)
+  ```
+- Python scanners: `pip install semgrep bandit ruff detect-secrets pip-audit`
 
 ### Step 3 — Analyze findings
 
@@ -312,7 +343,7 @@ Use this structure:
 ## Security Scan Report: `<repo_path>`
 
 **Risk Level:** CRITICAL / HIGH / MEDIUM / LOW / CLEAN
-**Scanners run:** semgrep, bandit, detect-secrets, pip-audit, ...
+**Scanners run:** codeql, semgrep, bandit, detect-secrets, dependabot/osv-scanner, pip-audit, ...
 **Findings:** X critical · Y high · Z medium · N low · N info
 **Scan duration:** Xs
 

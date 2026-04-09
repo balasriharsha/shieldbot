@@ -2,6 +2,8 @@
 
 from shieldbot.scanners.bandit_scanner import BanditScanner
 from shieldbot.scanners.base import BaseScanner, deduplicate, run_all_parallel
+from shieldbot.scanners.codeql_scanner import CodeQLScanner
+from shieldbot.scanners.dependabot_scanner import DependabotScanner
 from shieldbot.scanners.npm_audit_scanner import NpmAuditScanner
 from shieldbot.scanners.pip_audit_scanner import PipAuditScanner
 from shieldbot.scanners.ruff_scanner import RuffScanner
@@ -18,4 +20,6 @@ __all__ = [
     "SecretsScanner",
     "PipAuditScanner",
     "NpmAuditScanner",
+    "CodeQLScanner",
+    "DependabotScanner",
 ]

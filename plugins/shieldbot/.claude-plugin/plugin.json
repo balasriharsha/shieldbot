@@ -1,6 +1,6 @@
 {
   "name": "shieldbot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "AI-powered security code review agent. Combines Semgrep (5,000+ rules), bandit, ruff, detect-secrets, pip-audit, and npm-audit to detect vulnerabilities, hardcoded secrets, and CVEs — then delivers a prioritized, actionable security report.",
   "author": {
     "name": "Bala Sriharsha",
